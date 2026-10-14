@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoteLive – Präsentation</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body { background: #080812; overflow: hidden; }
+
+        .display-root {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 2.5rem 4rem;
+            gap: 1.5rem;
+        }
+
+        .display-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .display-title {
+            font-size: clamp(1.4rem, 3vw, 2.2rem);
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .display-meta {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .display-code {
+            font-size: clamp(1.4rem, 3vw, 2rem);
+            font-weight: 800;
+            letter-spacing: 0.15em;
+            color: var(--primary);
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            padding: 0.3rem 1rem;
+        }
+
+        .display-participants {
+            font-size: 1rem;
+            color: var(--text-muted);
+        }
+
+        .display-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 0;
+        }
+
+        .display-waiting {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+            color: var(--text-muted);
+        }
+
+        .display-waiting .big-code {
+            font-size: clamp(4rem, 12vw, 8rem);
+            font-weight: 900;
+            letter-spacing: 0.2em;
+            color: var(--primary);
+            line-height: 1;
+        }
+
+        .display-waiting p {
+            font-size: clamp(1rem, 2vw, 1.4rem);
+        }
+
+        .display-question-text {
+            font-size: clamp(1.4rem, 3.5vw, 2.8rem);
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 2rem;
+            line-height: 1.3;
+        }
+
+        /* Großes Balkendiagramm */
+        .display-bar-chart { display: flex; flex-direction: column; gap: 1rem; }
+
+        .display-bar-row {
+            display: grid;
+            grid-template-columns: minmax(120px, 25%) 1fr auto;
+            align-items: center;
+            gap: 1.2rem;
+        }
+
+        .display-bar-label {
+            font-size: clamp(1rem, 2vw, 1.5rem);
+            color: var(--text);
+            text-align: right;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .display-bar-track {
+            height: clamp(36px, 5vw, 56px);
+            background: var(--surface2);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .display-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), #a78bfa);
+            border-radius: 10px;
+            transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+            width: 0%;
+        }
+
+        .display-bar-pct {
+            font-size: clamp(1rem, 2vw, 1.5rem);
+            font-weight: 700;
+            color: var(--text-muted);
+            min-width: 56px;
+            text-align: right;
+        }
+
+        /* Große Wortwolke */
+        .display-wordcloud {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+            align-content: center;
+        }
+
+        /* Großes Scale-Ergebnis */
+        .display-avg {
+            font-size: clamp(5rem, 15vw, 10rem);
+            font-weight: 900;
+            color: var(--primary);
+            text-align: center;
+            line-height: 1;
+        }
+
+        .display-avg-label {
+            text-align: center;
+            font-size: clamp(1rem, 2vw, 1.5rem);
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+
+        /* Offene Antworten */
+        .display-qa-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            overflow-y: auto;
+            max-height: 60vh;
+        }
+
+        .display-qa-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.8rem 1.4rem;
+            font-size: clamp(0.95rem, 1.8vw, 1.3rem);
+            color: var(--text);
+            animation: fadeUp 0.4s ease both;
+        }
+
+        .display-footer {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .display-logo {
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: var(--primary);
+        }
+        .display-logo span { color: var(--accent); }
+
+        .display-answer-count {
+            font-size: 1rem;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="display-root">
+        <div class="display-header">
+            <div class="display-title" id="sessionTitle">VoteLive</div>
+            <div class="display-meta">
+                <span class="display-participants" id="participantCount">👥 0 Teilnehmer</span>
+                <span class="display-code" id="sessionCode">––––––</span>
+            </div>
+        </div>
+
+        <div class="display-body" id="displayBody">
+            <div class="display-waiting" id="waitingView">
+                <p>Session beitreten unter <strong style="color:var(--text)">localhost:3000</strong></p>
+                <div class="big-code" id="bigCode">––––––</div>
+                <p>Code eingeben und mitmachen</p>
+            </div>
+        </div>
+
+        <div class="display-footer">
+            <span class="display-logo">Vote<span>Live</span></span>
+            <span class="display-answer-count" id="answerCount"></span>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        const sessionId = getParam('id');
+        if (!sessionId) { document.body.innerHTML = '<p style="color:red;padding:2rem">Keine Session-ID angegeben.</p>'; }
+
+        const displayBody      = document.getElementById('displayBody');
+        const sessionTitleEl   = document.getElementById('sessionTitle');
+        const sessionCodeEl    = document.getElementById('sessionCode');
+        const bigCodeEl        = document.getElementById('bigCode');
+        const participantEl    = document.getElementById('participantCount');
+        const answerCountEl    = document.getElementById('answerCount');
+
+        let currentQuestion = null;
+
+        async function init() {
+            const { ok, data } = await apiFetch(`/api/sessions/${sessionId}`);
+            if (!ok) return;
+            sessionTitleEl.textContent = data.title;
+            sessionCodeEl.textContent  = data.code;
+            if (bigCodeEl) bigCodeEl.textContent = data.code;
+            participantEl.textContent = `👥 ${data.participantCount} Teilnehmer`;
+
+            if (data.activeQuestionId) {
+                const q = data.questions.find(q => q.id === data.activeQuestionId);
+                if (q) { currentQuestion = q; showWaiting(); }
+            }
+        }
+
+        const socket = new LiveSocket(sessionId, 'display', {
+            QUESTION_START(msg) {
+                currentQuestion = msg.question;
+                answerCountEl.textContent = '';
+                showQuestion(msg.question);
+            },
+            QUESTION_STOP() {
+                currentQuestion = null;
+                showWaiting();
+                answerCountEl.textContent = '';
+            },
+            ANSWER_UPDATE(msg) {
+                answerCountEl.textContent = `${msg.answerCount} Antwort${msg.answerCount !== 1 ? 'en' : ''}`;
+                if (currentQuestion && document.getElementById('liveChart')) {
+                    renderDisplayResults(document.getElementById('liveChart'), msg.results, currentQuestion);
+                }
+            },
+            SHOW_RESULTS(msg) {
+                renderDisplayResults(document.getElementById('liveChart') || createChartContainer(), msg.results, msg.question || currentQuestion);
+            },
+            PARTICIPANT_COUNT(msg) {
+                participantEl.textContent = `👥 ${msg.count} Teilnehmer`;
+            },
+            SESSION_CLOSED() {
+                displayBody.innerHTML = `<div class="display-waiting"><p>Session wurde beendet.</p></div>`;
+            },
+        });
+
+        function showWaiting() {
+            displayBody.innerHTML = `
+                <div class="display-waiting fade-up">
+                    <p>Session beitreten unter <strong style="color:var(--text)">localhost:3000</strong></p>
+                    <div class="big-code">${sessionCodeEl.textContent}</div>
+                    <p>Code eingeben und mitmachen</p>
+                </div>`;
+        }
+
+        function showQuestion(q) {
+            displayBody.innerHTML = `
+                <div class="fade-up">
+                    <div class="display-question-text">${escapeHtml(q.text)}</div>
+                    <div id="liveChart"></div>
+                </div>`;
+
+            if (q.type === 'multiple_choice') {
+                // Optionen als leere Balken zeigen bis Antworten kommen
+                const emptyResults = {
+                    type: 'multiple_choice', total: 0,
+                    counts: Object.fromEntries(q.options.map(o => [o, 0])),
+                    percentages: Object.fromEntries(q.options.map(o => [o, 0])),
+                };
+                renderDisplayResults(document.getElementById('liveChart'), emptyResults, q);
+            }
+        }
+
+        function createChartContainer() {
+            const div = document.createElement('div');
+            div.id = 'liveChart';
+            displayBody.appendChild(div);
+            return div;
+        }
+
+        function renderDisplayResults(container, results, question) {
+            if (!container || !results) return;
+            if (results.type === 'multiple_choice') {
+                const { counts, percentages, total } = results;
+                container.innerHTML = `
+                    <div class="display-bar-chart">
+                        ${Object.entries(counts).map(([label, count]) => {
+                            const pct = percentages[label] || 0;
+                            return `
+                                <div class="display-bar-row">
+                                    <span class="display-bar-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+                                    <div class="display-bar-track">
+                                        <div class="display-bar-fill" style="width:${pct}%"></div>
+                                    </div>
+                                    <span class="display-bar-pct">${pct}%</span>
+                                </div>`;
+                        }).join('')}
+                    </div>`;
+            } else if (results.type === 'scale') {
+                container.innerHTML = `
+                    <div class="display-avg">${results.avg}</div>
+                    <div class="display-avg-label">Durchschnitt · ${results.total} Antwort${results.total !== 1 ? 'en' : ''}</div>`;
+            } else if (results.type === 'wordcloud') {
+                const maxFreq = Math.max(1, ...Object.values(results.words));
+                const sorted = Object.entries(results.words).sort((a,b) => b[1]-a[1]).slice(0, 30);
+                container.innerHTML = `
+                    <div class="display-wordcloud">
+                        ${sorted.map(([word, freq]) => {
+                            const size = 1.5 + (freq / maxFreq) * 4;
+                            return `<span style="font-size:${size}rem;font-weight:700;color:var(--primary);opacity:${0.5 + freq/maxFreq*0.5}">${escapeHtml(word)}</span>`;
+                        }).join('')}
+                    </div>`;
+            } else if (results.type === 'open') {
+                container.innerHTML = `
+                    <div class="display-qa-list">
+                        ${results.answers.slice(-8).map(a =>
+                            `<div class="display-qa-item">${escapeHtml(a.text)}</div>`
+                        ).join('')}
+                    </div>`;
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
