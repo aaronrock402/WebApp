@@ -1,7 +1,7 @@
 {
-  "name": "votelive-backend",
+  "name": "rumfrageheld-backend",
   "version": "1.0.0",
-  "description": "VoteLive – Echtzeit-Umfrage-Backend",
+  "description": "RumfrageHeld – Echtzeit-Umfrage-Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
