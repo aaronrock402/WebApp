@@ -1,4 +1,4 @@
-# VoteLive – Echtzeit-Umfrage-Webapp
+# RumfrageHeld – Echtzeit-Umfrage-Webapp
 
 Eine Slido/Menti-ähnliche Webapp für Live-Abstimmungen. Moderatoren erstellen Sessions mit Fragen, Teilnehmer stimmen per Browser ab – ohne Account oder App.
 
