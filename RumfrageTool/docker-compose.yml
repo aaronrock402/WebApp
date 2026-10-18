@@ -1,0 +1,94 @@
+services:
+  # 1. Datenbank (Fertiges Image)
+  db:
+    image: postgres:16-alpine
+    container_name: survey-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-surveyuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-surveypass}
+      POSTGRES_DB: ${POSTGRES_DB:-surveydb}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-surveyuser} -d ${POSTGRES_DB:-surveydb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Message Broker (Fertiges Image inkl. Web-Dashboard)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: survey-rabbitmq
+    ports:
+      - "5672:5672"   # AMQP-Port für unsere Backends
+      - "15672:15672" # Web-GUI für den Browser (Login: guest / guest)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Backend 1: Main API (Express)
+  backend-api:
+    build: ./backend-api
+    container_name: survey-api
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER:-surveyuser}:${POSTGRES_PASSWORD:-surveypass}@db:5432/${POSTGRES_DB:-surveydb}
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET:-geheimes-uni-projekt-jwt-secret-2026}
+      FRONTEND_URL: http://localhost:5173
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. Backend 2: Logging Microservice (Node.js)
+  backend-logger:
+    build: ./backend-logger
+    container_name: survey-logger
+    environment:
+      RABBITMQ_URL: amqp://rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # 5. Frontend: SvelteKit (SSR)
+  frontend:
+    build: ./frontend
+    container_name: survey-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      PORT: 5173
+      HOST: 0.0.0.0
+      ORIGIN: http://localhost:5173
+      PUBLIC_API_URL: http://localhost:3000
+      INTERNAL_API_URL: http://backend-api:3000
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

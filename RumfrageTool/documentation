@@ -1,0 +1,317 @@
+Struktur:
+
+    /db – Enthält später unser SQL-Startskript, damit PostgreSQL die Tabellen automatisch anlegt.
+
+    /backend-api – Unser Express-Hauptbackend (Auth, CRUD, RabbitMQ-Sender).
+
+    /backend-logger – Unser schlanker Microservice (RabbitMQ-Empfänger).
+
+    /frontend – Unsere SvelteKit-App mit Tailwind CSS.
+
+--------------------------------------
+docker-compose.yml:
+
+Automatisches Docker-DNS: Alle Services in dieser Datei landen automatisch im selben virtuellen Docker-Netzwerk. 
+Deshalb kann backend-api die Datenbank einfach unter dem Hostnamen db (@db:5432) und RabbitMQ unter 
+rabbitmq (amqp://rabbitmq:5672) erreichen – niemals localhost für die Kommunikation zwischen Containern nutzen!
+
+Echte Startreihenfolge mit condition: service_healthy: Ein normales depends_on wartet 
+nur darauf, dass der Datenbank-Container gestartet ist – nicht darauf, dass PostgreSQL intern 
+fertig geladen hat. Ohne service_healthy würde unser Express-Backend beim Start sofort abstürzen (Connection refused), 
+weil Node.js schneller startet als Postgres oder RabbitMQ.
+
+Automatisches Datenbank-Setup: Über ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro nutzen wir ein 
+offizielles Feature des Postgres-Images: Jede .sql-Datei in diesem Ordner wird 
+beim allerersten Start automatisch ausgeführt.
+
+--------------------------------------
+
+init.sql:
+
+Primärschlüssel (SERIAL PRIMARY KEY): PostgreSQL zählt die id bei jedem 
+neuen Eintrag automatisch hoch (1, 2, 3, ...).
+
+Fremdschlüssel (REFERENCES users(id) ON DELETE SET NULL): Verknüpft eine Umfrage mit 
+der Person, die sie erstellt hat (1:n-Beziehung). Wird ein User-Account später gelöscht, 
+bleiben die Umfragen dank ON DELETE SET NULL erhalten.
+
+Integritätsbedingungen (NOT NULL, UNIQUE, DEFAULT 0): Die Datenbank selbst verhindert 
+fehlerhafte Zustände (z. B. zwei Nutzer mit demselben Benutzernamen oder NULL-Werte beim Stimmenzähler).
+
+Seed-Daten (INSERT INTO): Wenn der Dozent euer Projekt mit docker compose up 
+startet, sieht er im Browser sofort zwei fertige Umfragen mit Stimmen und 
+muss nicht erst eine leere, weiße Seite anstarren.
+
+--------------------------------------------
+
+Umgesetzte Dateien im Ordner /backend-logger:
+
+1. backend-logger/package.json
+   - Funktion: Definiert die Metadaten des Microservices, das Start-Skript 
+     ("node index.js") sowie die einzige externe Abhängigkeit "amqplib" 
+     (AMQP-Client-Bibliothek für die Kommunikation mit RabbitMQ).
+
+2. backend-logger/index.js
+   - Funktion: Enthält die gesamte Programmlogik des Microservices.
+   - Verbindungsaufbau: Verbindet sich über die Umgebungsvariable RABBITMQ_URL 
+     mit dem RabbitMQ-Container und öffnet einen Kommunikationskanal (Channel).
+   - Queue-Initialisierung: Stellt mit channel.assertQueue('survey_events', 
+     { durable: true }) sicher, dass die Warteschlange existiert und 
+     Neustarts übersteht (Idempotenz).
+   - Event-Verarbeitung: Lauscht per channel.consume() dauerhaft auf neue 
+     JSON-Events vom Haupt-Backend, gibt diese mit Zeitstempel als [AUDIT-LOG] 
+     aus und bestätigt den Erhalt per channel.ack(msg) (Message Acknowledgment), 
+     damit keine Nachrichten verloren gehen.
+   - Fehlertoleranz (Resilienz): Falls RabbitMQ noch nicht erreichbar ist, 
+     greift ein Catch-Block mit setTimeout(), der die Verbindung automatisch 
+     alle 5 Sekunden erneut versucht.
+
+3. backend-logger/Dockerfile
+   - Funktion: Bauanleitung für das eigene Docker-Image des Microservices.
+   - Basis-Image: Nutzt das ressourcensparende "node:20-alpine" Linux-Image.
+   - Layer-Caching: Kopiert zuerst nur die package.json und installiert die 
+     Abhängigkeiten via "npm install --omit=dev", bevor der Quellcode (index.js) 
+     kopiert wird. Dadurch werden Builds bei reinen Code-Änderungen beschleunigt.
+
+--------------------------------------------
+
+backend-api, package.json:
+
+    express: Unser Web-Framework für REST-Routen und Middleware.
+
+    pg: Offizieller PostgreSQL-Client für Node.js.
+
+    amqplib: Sendet Events an RabbitMQ.
+
+    bcryptjs: Hasht Passwörter sicher 
+    vor dem Speichern in der Datenbank.
+
+    jsonwebtoken & cookie-parser: Erstellen und lesen unser 
+    JWT aus den HttpOnly-Cookies.
+
+    cors: Erlaubt dem SvelteKit-Frontend (localhost:5173), mit der 
+    API (localhost:3000) zu kommunizieren und Cookies mitzusenden.
+
+----------------------------------------------
+
+backend-api, index.js:
+
+    app.use(...) (Middleware-Kette): Jeder eingehende HTTP-Request durchläuft in 
+    Express von oben nach unten diese Funktionen. express.json() wandelt den 
+    Text-Body in ein JavaScript-Objekt (req.body) um, cookieParser() stellt 
+    die Cookies unter req.cookies bereit.
+
+    CORS mit credentials: true: Da unser Frontend auf Port 5173 
+    und unsere API auf Port 3000 läuft, gelten sie für den Browser als 
+    unterschiedliche Origins. Ohne credentials: true würde der Browser 
+    sich strikt weigern, unser Sicherheits-Cookie (HttpOnly) mitzuschicken.
+
+    PostgreSQL Pool statt Einzelverbindung: Ein Pool hält mehrere 
+    Datenbankverbindungen gleichzeitig offen. Wenn 20 Nutzer 
+    gleichzeitig abstimmen, muss nicht jedes Mal eine langsame neue 
+    TCP-Verbindung zur Datenbank aufgebaut werden.
+
+---------------------------------------------------------
+
+backend-api datei erklärungen:
+
+Ziel:
+Aufbau des zentralen Express-Servers inkl. Datenbank-Verbindungspool zu 
+PostgreSQL, RabbitMQ-Producer-Verbindung und einem tiefen Healthcheck-Endpunkt 
+für Docker.
+
+Umgesetzte Dateien im Ordner /backend-api:
+
+1. backend-api/package.json
+   - Funktion: Definiert die Abhängigkeiten des Haupt-Backends: "express" 
+     (REST-API), "pg" (PostgreSQL-Client), "amqplib" (RabbitMQ-Client), 
+     "cors" (Cross-Origin Resource Sharing), "cookie-parser" (Auslesen von 
+     HttpOnly-Cookies), "bcryptjs" (Passwort-Hashing) und "jsonwebtoken" (JWT).
+
+2. backend-api/Dockerfile
+   - Funktion: Baut das Container-Image auf Basis von "node:20-alpine" unter 
+     Nutzung von Docker-Layer-Caching (zuerst package.json + npm install, 
+     danach Quellcode) und gibt Port 3000 frei (EXPOSE 3000).
+
+3. backend-api/index.js (Grundgerüst)
+   - Globale Middlewares: Aktiviert express.json() für JSON-Payloads, 
+     cookieParser() für Cookie-Zugriff und cors({ origin, credentials: true }), 
+     damit das Frontend auf Port 5173 Cookies an Port 3000 senden darf.
+   - Datenbank-Anbindung: Nutzt pg.Pool für effizientes Connection-Pooling 
+     zur PostgreSQL-Datenbank.
+   - RabbitMQ-Producer: Baut eine Verbindung zur Queue "survey_events" auf und 
+     stellt die Hilfsfunktion publishEvent(action, payload) bereit, um Events 
+     asynchron an den Microservice (backend-logger) zu senden.
+   - Healthcheck (/health): Führt eine echte SQL-Abfrage ("SELECT 1") aus, um 
+     Docker über den Zustand von API und Datenbankverbindung zu informieren.
+
+----------------------------------------------
+
+Erweiterungen in backend-api/index.js:
+
+Ziel:
+Implementierung einer sicheren Benutzer-Authentifizierung (Registrierung, Login, 
+Logout, Session-Check) sowie einer eigenen Express-Middleware zum Schutz 
+sensibler API-Endpunkte.
+
+1. Sicherheits-Konzepte & Hilfsfunktionen:
+   - Passwort-Sicherheit: Passwörter werden niemals im Klartext gespeichert, 
+     sondern mit "bcryptjs" (10 Salt-Runden) vor dem Datenbank-Insert gehasht.
+   - JWT in HttpOnly-Cookies (setAuthCookie): Nach erfolgreichem Login oder 
+     Registrierung wird ein signiertes JSON Web Token (24h gültig) in einem 
+     Cookie mit den Flags "httpOnly: true" (Schutz vor XSS-Diebstahl durch 
+     JavaScript) und "sameSite: 'lax'" (Schutz vor CSRF) gespeichert.
+   - SQL-Injection-Schutz: Alle Datenbankabfragen nutzen Prepared Statements 
+     mit Platzhaltern ($1, $2).
+
+2. Auth-Middleware (requireAuth):
+   - Funktion: Prüft bei geschützten Routen, ob ein gültiges JWT-Cookie 
+     mitgesendet wurde. Bei Erfolg werden die User-Daten in "req.user" 
+     gehängt und "next()" aufgerufen; andernfalls bricht die Anfrage mit 
+     HTTP-Status 401 (Unauthorized) ab.
+
+3. Implementierte Endpunkte:
+   - POST /api/auth/register: Validiert Eingaben, hasht das Passwort, speichert 
+     den User in PostgreSQL, setzt das Auth-Cookie und sendet das Event 
+     "USER_REGISTERED" via RabbitMQ an Backend 2.
+   - POST /api/auth/login: Prüft User und Passwort-Hash (einheitliche 401-Meldung 
+     gegen User-Enumeration), setzt das Auth-Cookie und sendet "USER_LOGIN" 
+     an RabbitMQ.
+   - POST /api/auth/logout: Löscht das Auth-Cookie über res.clearCookie('token').
+   - GET /api/auth/me: Gibt den aktuell eingeloggten User anhand des Cookies 
+     zurück (für das Server-Side Rendering im Frontend).
+
+---------------------------------------------------------------
+
+Umgesetzte Routen in backend-api/index.js:
+
+Ziel:
+Vervollständigung der REST-API in backend-api/index.js um alle CRUD-Operationen 
+(Create, Read, Update, Delete) für die Entität "surveys" inklusive 
+Event-Übertragung an den Logging-Microservice via RabbitMQ.
+
+1. GET /api/surveys (Read – Öffentlich)
+   - Lädt alle Umfragen absteigend sortiert nach Erstellungsdatum.
+   - Nutzt einen SQL "LEFT JOIN" mit der Tabelle "users" und "COALESCE", damit 
+     sowohl Umfragen registrierter Nutzer (mit Autorennamen) als auch die 
+     initialen System-Beispieldaten (user_id = NULL) ausgegeben werden.
+
+2. POST /api/surveys (Create – Geschützt durch requireAuth)
+   - Prüft Pflichtfelder (title, option_a, option_b), speichert die neue Umfrage 
+     verknüpft mit der ID des eingeloggten Nutzers (req.user.id) und gibt den 
+     Datensatz via "RETURNING *" direkt zurück.
+   - Sendet das Event "SURVEY_CREATED" an RabbitMQ.
+
+3. PUT /api/surveys/:id (Update / Bearbeiten – Geschützt durch requireAuth)
+   - Aktualisiert Titel sowie Option A und B einer bestehenden Umfrage anhand 
+     ihrer ID. Gibt HTTP 404 zurück, falls die ID nicht existiert.
+   - Sendet das Event "SURVEY_UPDATED" an RabbitMQ.
+
+4. POST /api/surveys/:id/vote (Update / Abstimmen – Öffentlich)
+   - Erhöht den Stimmenzähler (votes_a oder votes_b) direkt in PostgreSQL atomar 
+     um 1 ("SET votes_a = votes_a + 1"), um Race Conditions (Lost Updates) bei 
+     gleichzeitigen Zugriffen zu verhindern.
+   - Sendet das Event "SURVEY_VOTED" an RabbitMQ.
+
+5. DELETE /api/surveys/:id (Delete – Geschützt durch requireAuth)
+   - Löscht eine Umfrage anhand ihrer ID aus der Datenbank und sendet das Event 
+     "SURVEY_DELETED" an RabbitMQ.
+
+--------------------------------------------
+
+Umgesetzte Dateien im Ordner /frontend:
+
+Ziel:
+Konfiguration des SvelteKit-Frontends mit Server-Side Rendering (SSR), 
+Tailwind CSS und einem Produktions-Dockerfile.
+
+1. frontend/package.json
+   - Definiert die Build- und Start-Skripte sowie die Abhängigkeiten für 
+     SvelteKit, den Node-Adapter (@sveltejs/adapter-node), Vite und Tailwind CSS.
+
+2. frontend/svelte.config.js & frontend/vite.config.js
+   - Konfiguriert SvelteKit mit dem Node-Adapter, sodass beim Build ein 
+     eigenständiger Node.js-SSR-Server im Verzeichnis /build erzeugt wird.
+
+3. frontend/tailwind.config.js & frontend/postcss.config.js
+   - Bindet Tailwind CSS und Autoprefixer in die PostCSS-Pipeline ein. 
+   - Durchsucht alle Dateien in ./src/ nach genutzten Utility-Klassen, um 
+     unbenutztes CSS beim Build zu entfernen (Minimierung der Dateigröße) und 
+     Browser-Kompatibilität für Chrome und Firefox sicherzustellen.
+
+4. frontend/Dockerfile
+   - Installiert die Abhängigkeiten auf Basis von "node:20-alpine", kompiliert 
+     die SvelteKit-Anwendung via "npm run build" in ein optimiertes 
+     Produktions-Bundle und startet den SSR-Server über "node build" auf Port 5173.
+
+-----------------------------------------
+
+Umgesetzte Dateien im Ordner /frontend/src:
+
+Ziel:
+Erstellung des globalen HTML- und CSS-Rahmens unter strikter Einhaltung der 
+Google Lighthouse-Kriterien für Barrierefreiheit (Accessibility), SEO und 
+Responsive Design (Mobile-First).
+
+1. frontend/src/app.html
+   - Setzt das Sprachattribut lang="de" für Screenreader (wichtiges 
+     Lighthouse-Accessibility-Kriterium).
+   - Definiert das Viewport-Meta-Tag für korrekte Skalierung auf Smartphones 
+     sowie Title- und Description-Tags.
+
+2. frontend/src/app.css
+   - Bindet die Tailwind-CSS-Ebenen (@tailwind base, components, utilities) ein.
+
+3. frontend/src/routes/+layout.svelte
+   - Importiert das globale Stylesheet (app.css).
+   - Nutzt semantische HTML5-Landmark-Elemente (<header>, <main>, <footer>) 
+     für optimale Screenreader-Navigation.
+   - Realisiert über CSS Flexbox (min-h-screen flex flex-col) und Tailwind-Container 
+     (max-w-4xl mx-auto px-4) ein responsives Layout für Mobile und Desktop 
+     mit WCAG-konformen Farbkontrasten.
+
+------------------------------------
+
+Umgesetzte Datei im Ordner /frontend/src/routes:
+
+Ziel:
+Implementierung des serverseitigen Datenabrufs (SSR) in SvelteKit, damit die 
+Benutzeroberfläche bereits vollständig mit Umfragen und Login-Status gerendert 
+an den Browser ausgeliefert wird.
+
+1. frontend/src/routes/+page.server.js
+   - Interne Docker-Kommunikation: Nutzt die Umgebungsvariable INTERNAL_API_URL 
+     (http://backend-api:3000), um innerhalb des Docker-Netzwerks direkt von 
+     Container zu Container mit dem Express-Backend zu kommunizieren.
+   - Cookie-Weiterleitung (SSR Auth): Liest den Cookie-Header des eingehenden 
+     Browser-Requests aus und leitet das HttpOnly-JWT-Cookie an den Endpunkt 
+     /api/auth/me weiter.
+   - Paralleler Datenabruf: Nutzt Promise.all(), um Benutzerstatus (/api/auth/me) 
+     und Umfrageliste (/api/surveys) gleichzeitig abzurufen und als "data"-Prop 
+     an die Seite (+page.svelte) zu übergeben.
+
+-------------------------------------
+
+Umgesetzte Datei im Ordner /frontend/src/routes:
+
+Ziel:
+Umsetzung einer reaktiven, mobil-optimierten und nach Google Lighthouse zu 100 % 
+barrierefreien Benutzeroberfläche für Authentifizierung und CRUD-Operationen.
+
+1. frontend/src/routes/+page.svelte
+   - SSR-Hydration: Übernimmt die serverseitig vorgeladenen Daten ("export let data") 
+     für die sofortige Darstellung ohne Lade-Verzögerung.
+   - Authentifizierungs-Flow: Formular zum Einloggen und Registrieren sowie 
+     Logout-Funktion. Nutzt "credentials: 'include'" bei allen fetch-Aufrufen, 
+     um das HttpOnly-JWT-Cookie sicher mitzusenden.
+   - Vollständiges CRUD für Umfragen:
+     * Create: Formular zum Anlegen neuer Entweder-Oder-Umfragen.
+     * Read: Liste aller Umfragen inkl. Autor, Stimmenanzahl und Prozentbalken.
+     * Update: Inline-Bearbeitungsmodus für Titel und Optionen sowie Live-Voting.
+     * Delete: Sofortiges Löschen von Umfragen aus Datenbank und UI-State.
+   - Mobile UX & Barrierefreiheit (Lighthouse):
+     * Responsive Layouts via Tailwind CSS Grid (grid-cols-1 sm:grid-cols-2).
+     * Strikte Überschriften-Hierarchie (h1 -> h2 -> h3), semantische Tags 
+       (<section>, <article>) und explizite Label-Input-Verknüpfungen (for/id).
+     * Hohe Farbkontraste nach WCAG-Standard und große Touch-Targets für Mobile.
+

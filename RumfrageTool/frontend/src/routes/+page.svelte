@@ -1,0 +1,528 @@
+<script>
+  import { env } from '$env/dynamic/public';
+
+  // Daten aus dem Server-Side Rendering (+page.server.js)
+  export let data;
+
+  const API_URL = env.PUBLIC_API_URL || 'http://localhost:3000';
+
+  // Reaktiver State (initialisiert mit den SSR-Daten)
+  let user = data.user;
+  let surveys = data.surveys || [];
+
+  // Status- und Fehlermeldungen
+  let errorMessage = '';
+  let statusMessage = '';
+
+  // State für Login / Registrierung
+  let isRegisterMode = false;
+  let username = '';
+  let password = '';
+
+  // State für "Neue Umfrage erstellen"
+  let newTitle = '';
+  let newOptionA = '';
+  let newOptionB = '';
+
+  // State für "Umfrage bearbeiten" (Inline-Edit)
+  let editingId = null;
+  let editTitle = '';
+  let editOptionA = '';
+  let editOptionB = '';
+
+  function clearMessages() {
+    errorMessage = '';
+    statusMessage = '';
+  }
+
+  // --- 1. Authentifizierung (Login / Register / Logout) ---
+  async function handleAuthSubmit() {
+    clearMessages();
+    const endpoint = isRegisterMode ? '/api/auth/register' : '/api/auth/login';
+
+    try {
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // WICHTIG: Empfängt und speichert das HttpOnly-Cookie!
+        body: JSON.stringify({ username, password })
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        errorMessage = result.error || 'Anmeldung fehlgeschlagen.';
+        return;
+      }
+
+      user = result.user;
+      username = '';
+      password = '';
+      statusMessage = isRegisterMode
+        ? `Willkommen, ${user.username}! Dein Account wurde erstellt.`
+        : `Willkommen zurück, ${user.username}!`;
+    } catch (err) {
+      errorMessage = 'Netzwerkfehler bei der Verbindung zum Server.';
+    }
+  }
+
+  async function handleLogout() {
+    clearMessages();
+    try {
+      await fetch(`${API_URL}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      user = null;
+      editingId = null;
+      statusMessage = 'Du wurdest erfolgreich abgemeldet.';
+    } catch (err) {
+      errorMessage = 'Fehler beim Abmelden.';
+    }
+  }
+
+  // --- 2. CRUD: Neue Umfrage anlegen (Create) ---
+  async function handleCreateSurvey() {
+    clearMessages();
+    try {
+      const res = await fetch(`${API_URL}/api/surveys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: newTitle,
+          option_a: newOptionA,
+          option_b: newOptionB
+        })
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        errorMessage = result.error || 'Umfrage konnte nicht erstellt werden.';
+        return;
+      }
+
+      // Neue Umfrage inklusive Autorenname oben in die Liste einfügen
+      surveys = [{ ...result, author: user.username }, ...surveys];
+      newTitle = '';
+      newOptionA = '';
+      newOptionB = '';
+      statusMessage = 'Umfrage erfolgreich veröffentlicht!';
+    } catch (err) {
+      errorMessage = 'Netzwerkfehler beim Erstellen der Umfrage.';
+    }
+  }
+
+  // --- 3. CRUD: Umfrage bearbeiten (Update) ---
+  function startEdit(survey) {
+    clearMessages();
+    editingId = survey.id;
+    editTitle = survey.title;
+    editOptionA = survey.option_a;
+    editOptionB = survey.option_b;
+  }
+
+  function cancelEdit() {
+    editingId = null;
+  }
+
+  async function saveEdit(surveyId) {
+    clearMessages();
+    try {
+      const res = await fetch(`${API_URL}/api/surveys/${surveyId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: editTitle,
+          option_a: editOptionA,
+          option_b: editOptionB
+        })
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        errorMessage = result.error || 'Änderung konnte nicht gespeichert werden.';
+        return;
+      }
+
+      surveys = surveys.map((s) => (s.id === surveyId ? { ...s, ...result } : s));
+      editingId = null;
+      statusMessage = 'Umfrage erfolgreich aktualisiert.';
+    } catch (err) {
+      errorMessage = 'Netzwerkfehler beim Speichern.';
+    }
+  }
+
+  // --- 4. CRUD: Abstimmen (Vote) ---
+  async function handleVote(surveyId, option) {
+    clearMessages();
+    try {
+      const res = await fetch(`${API_URL}/api/surveys/${surveyId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ option })
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        errorMessage = result.error || 'Abstimmung fehlgeschlagen.';
+        return;
+      }
+
+      surveys = surveys.map((s) => (s.id === surveyId ? { ...s, ...result } : s));
+    } catch (err) {
+      errorMessage = 'Netzwerkfehler beim Abstimmen.';
+    }
+  }
+
+  // --- 5. CRUD: Umfrage löschen (Delete) ---
+  async function handleDelete(surveyId) {
+    clearMessages();
+    try {
+      const res = await fetch(`${API_URL}/api/surveys/${surveyId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      if (!res.ok) {
+        const result = await res.json();
+        errorMessage = result.error || 'Löschen fehlgeschlagen.';
+        return;
+      }
+
+      surveys = surveys.filter((s) => s.id !== surveyId);
+      statusMessage = 'Umfrage wurde gelöscht.';
+    } catch (err) {
+      errorMessage = 'Netzwerkfehler beim Löschen.';
+    }
+  }
+
+  // Hilfsfunktion zur Prozentberechnung für die Balkenanzeige
+  function getPercent(votes, total) {
+    if (total === 0) return 50;
+    return Math.round((votes / total) * 100);
+  }
+</script>
+
+<!-- Hauptüberschrift (h1) für klare Dokumentstruktur -->
+<div class="mb-8">
+  <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">
+    Entweder-Oder-Umfragen in Echtzeit
+  </h1>
+  <p class="mt-1 text-base text-slate-700">
+    Stimme sofort mit einem Klick ab oder melde dich an, um eigene Umfragen zu verwalten.
+  </p>
+</div>
+
+<!-- Barrierefreie Status- und Fehlermeldungen (aria-live) -->
+{#if errorMessage}
+  <div
+    role="alert"
+    class="mb-6 p-4 rounded-lg bg-red-100 border border-red-400 text-red-900 font-medium"
+  >
+    {errorMessage}
+  </div>
+{/if}
+
+{#if statusMessage}
+  <div
+    role="status"
+    aria-live="polite"
+    class="mb-6 p-4 rounded-lg bg-emerald-100 border border-emerald-400 text-emerald-950 font-medium"
+  >
+    {statusMessage}
+  </div>
+{/if}
+
+<!-- BEREICH 1: Authentifizierung & Umfrage-Erstellung -->
+<section class="mb-10 bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-300">
+  {#if !user}
+    <h2 class="text-xl font-bold text-slate-900 mb-2">
+      {isRegisterMode ? 'Neuen Account registrieren' : 'Anmelden zum Erstellen & Bearbeiten'}
+    </h2>
+    <p class="text-sm text-slate-700 mb-4">
+      Deine Sitzung wird sicher über ein geschütztes HttpOnly-Cookie verwaltet.
+    </p>
+
+    <form on:submit|preventDefault={handleAuthSubmit} class="space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="auth-username" class="block text-sm font-semibold text-slate-900 mb-1">
+            Benutzername
+          </label>
+          <input
+            id="auth-username"
+            type="text"
+            bind:value={username}
+            required
+             minlength="3"
+            placeholder="z.B. Lisa"
+            class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+          />
+        </div>
+        <div>
+          <label for="auth-password" class="block text-sm font-semibold text-slate-900 mb-1">
+            Passwort
+          </label>
+          <input
+            id="auth-password"
+            type="password"
+            bind:value={password}
+            required
+            minlength="4"
+            placeholder="Mindestens 4 Zeichen"
+            class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+          />
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 pt-1">
+        <button
+          type="submit"
+          class="px-5 py-2.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold transition focus:ring-2 focus:ring-offset-2 focus:ring-indigo-700"
+        >
+          {isRegisterMode ? 'Jetzt registrieren' : 'Einloggen'}
+        </button>
+
+        <button
+          type="button"
+          on:click={() => {
+            isRegisterMode = !isRegisterMode;
+            clearMessages();
+          }}
+          class="px-4 py-2.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-medium transition"
+        >
+          {isRegisterMode ? 'Stattdessen einloggen' : 'Noch keinen Account? Registrieren'}
+        </button>
+      </div>
+    </form>
+  {:else}
+    <!-- Eingeloggter Zustand: Header + Formular für neue Umfrage -->
+    <div class="flex flex-wrap items-center justify-between gap-4 pb-5 mb-5 border-b border-slate-200">
+      <div>
+        <h2 class="text-xl font-bold text-slate-900">Neue Umfrage starten</h2>
+        <p class="text-sm text-slate-700">
+          Angemeldet als <strong class="text-indigo-900">{user.username}</strong>
+        </p>
+      </div>
+      <button
+        type="button"
+        on:click={handleLogout}
+        class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold text-sm transition"
+      >
+        Abmelden
+      </button>
+    </div>
+
+    <form on:submit|preventDefault={handleCreateSurvey} class="space-y-4">
+      <div>
+        <label for="new-title" class="block text-sm font-semibold text-slate-900 mb-1">
+          Frage / Titel der Umfrage
+        </label>
+        <input
+          id="new-title"
+          type="text"
+          bind:value={newTitle}
+          required
+          placeholder="z.B. Was grillen wir am Freitag?"
+          class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+        />
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="new-opt-a" class="block text-sm font-semibold text-slate-900 mb-1">
+            Antwort-Option A
+          </label>
+          <input
+            id="new-opt-a"
+            type="text"
+            bind:value={newOptionA}
+            required
+            placeholder="z.B. Klassische Bratwurst"
+            class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+          />
+        </div>
+        <div>
+          <label for="new-opt-b" class="block text-sm font-semibold text-slate-900 mb-1">
+            Antwort-Option B
+          </label>
+          <input
+            id="new-opt-b"
+            type="text"
+            bind:value={newOptionB}
+            required
+            placeholder="z.B. Grillkäse & Gemüse"
+            class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+          />
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        class="w-full sm:w-auto px-6 py-2.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold transition focus:ring-2 focus:ring-offset-2 focus:ring-indigo-700"
+      >
+        Umfrage veröffentlichen
+      </button>
+    </form>
+  {/if}
+</section>
+
+<!-- BEREICH 2: Liste aller Umfragen -->
+<section aria-labelledby="surveys-heading">
+  <h2 id="surveys-heading" class="text-xl sm:text-2xl font-bold text-slate-900 mb-4">
+    Aktuelle Umfragen ({surveys.length})
+  </h2>
+
+  {#if surveys.length === 0}
+    <p class="p-6 bg-white rounded-xl border border-slate-300 text-slate-700">
+      Noch keine Umfragen vorhanden. Erstelle jetzt die erste Umfrage!
+    </p>
+  {:else}
+    <div class="space-y-5">
+      {#each surveys as survey (survey.id)}
+        {@const totalVotes = survey.votes_a + survey.votes_b}
+        {@const percentA = getPercent(survey.votes_a, totalVotes)}
+        {@const percentB = 100 - percentA}
+
+        <article class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-300">
+          {#if editingId === survey.id}
+            <!-- INLINE BEARBEITUNGS-MODUS (Update) -->
+            <form on:submit|preventDefault={() => saveEdit(survey.id)} class="space-y-4">
+              <h3 class="text-lg font-bold text-slate-900">Umfrage bearbeiten</h3>
+
+              <div>
+                <label
+                  for="edit-title-{survey.id}"
+                  class="block text-sm font-semibold text-slate-900 mb-1"
+                >
+                  Frage / Titel
+                </label>
+                <input
+                  id="edit-title-{survey.id}"
+                  type="text"
+                  bind:value={editTitle}
+                  required
+                  class="w-full px-3.5 py-2 rounded-lg border border-slate-400 text-slate-900"
+                />
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label
+                    for="edit-a-{survey.id}"
+                    class="block text-sm font-semibold text-slate-900 mb-1"
+                  >
+                    Option A
+                  </label>
+                  <input
+                    id="edit-a-{survey.id}"
+                    type="text"
+                    bind:value={editOptionA}
+                    required
+                    class="w-full px-3.5 py-2 rounded-lg border border-slate-400 text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label
+                    for="edit-b-{survey.id}"
+                    class="block text-sm font-semibold text-slate-900 mb-1"
+                  >
+                    Option B
+                  </label>
+                  <input
+                    id="edit-b-{survey.id}"
+                    type="text"
+                    bind:value={editOptionB}
+                    required
+                    class="w-full px-3.5 py-2 rounded-lg border border-slate-400 text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div class="flex flex-wrap gap-3">
+                <button
+                  type="submit"
+                  class="px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-sm"
+                >
+                  Änderungen speichern
+                </button>
+                <button
+                  type="button"
+                  on:click={cancelEdit}
+                  class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold text-sm"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          {:else}
+            <!-- STANDARD ANZEIGE- & ABSTIMMUNGS-MODUS -->
+            <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 class="text-lg sm:text-xl font-bold text-slate-900">{survey.title}</h3>
+                <p class="text-xs sm:text-sm text-slate-700 mt-0.5">
+                  Erstellt von <span class="font-semibold">{survey.author || 'Unbekannt'}</span>
+                  &bull; {totalVotes} {totalVotes === 1 ? 'Stimme' : 'Stimmen'} insgesamt
+                </p>
+              </div>
+
+              {#if user}
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    on:click={() => startEdit(survey)}
+                    class="px-3.5 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold text-xs sm:text-sm transition"
+                  >
+                    Bearbeiten
+                  </button>
+                  <button
+                    type="button"
+                    on:click={() => handleDelete(survey.id)}
+                    class="px-3.5 py-2 rounded-lg bg-red-700 hover:bg-red-800 text-white font-semibold text-xs sm:text-sm transition"
+                  >
+                    Löschen
+                  </button>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Abstimmungs-Buttons (Responsive Grid für Mobile & Desktop) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              <button
+                type="button"
+                on:click={() => handleVote(survey.id, 'a')}
+                class="flex items-center justify-between p-4 rounded-xl border-2 border-indigo-700 bg-indigo-50 hover:bg-indigo-100 text-slate-900 font-semibold text-left transition focus:ring-2 focus:ring-indigo-700"
+              >
+                <span>A: {survey.option_a}</span>
+                <span class="ml-2 px-2.5 py-1 rounded-md bg-indigo-800 text-white text-xs font-bold">
+                  {survey.votes_a} ({percentA}%)
+                </span>
+              </button>
+
+              <button
+                type="button"
+                on:click={() => handleVote(survey.id, 'b')}
+                class="flex items-center justify-between p-4 rounded-xl border-2 border-teal-700 bg-teal-50 hover:bg-teal-100 text-slate-900 font-semibold text-left transition focus:ring-2 focus:ring-teal-700"
+              >
+                <span>B: {survey.option_b}</span>
+                <span class="ml-2 px-2.5 py-1 rounded-md bg-teal-800 text-white text-xs font-bold">
+                  {survey.votes_b} ({percentB}%)
+                </span>
+              </button>
+            </div>
+
+            <!-- Visueller Ergebnis-Balken -->
+            <div
+              class="w-full h-3 rounded-full overflow-hidden flex bg-slate-200"
+              aria-hidden="true"
+            >
+              <div style="width: {percentA}%" class="bg-indigo-700 transition-all duration-300"></div>
+              <div style="width: {percentB}%" class="bg-teal-700 transition-all duration-300"></div>
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </div>
+  {/if}
+</section>

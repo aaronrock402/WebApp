@@ -1,0 +1,12 @@
+{
+  "name": "backend-logger",
+  "version": "1.0.0",
+  "description": "RabbitMQ Logging Microservice",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.4"
+  }
+}
