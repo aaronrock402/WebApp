@@ -1,34 +1,46 @@
 <script>
+  import { preventDefault } from 'svelte/legacy';
+
   import { env } from '$env/dynamic/public';
 
-  // Daten aus dem Server-Side Rendering (+page.server.js)
-  export let data;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} data - Daten aus dem Server-Side Rendering (+page.server.js)
+   */
+
+  /** @type {Props} */
+  let { data } = $props();
 
   const API_URL = env.PUBLIC_API_URL || 'http://localhost:3000';
 
   // Reaktiver State (initialisiert mit den SSR-Daten)
-  let user = data.user;
-  let surveys = data.surveys || [];
+  // Bewusst nur als Initialwert aus den SSR-Daten übernommen
+  // svelte-ignore state_referenced_locally
+  let user = $state(data.user);
+
+  // svelte-ignore state_referenced_locally
+  let surveys = $state(data.surveys || []);
 
   // Status- und Fehlermeldungen
-  let errorMessage = '';
-  let statusMessage = '';
+  let errorMessage = $state('');
+  let statusMessage = $state('');
 
   // State für Login / Registrierung
-  let isRegisterMode = false;
-  let username = '';
-  let password = '';
+  let isRegisterMode = $state(false);
+  let username = $state('');
+  let password = $state('');
 
   // State für "Neue Umfrage erstellen"
-  let newTitle = '';
-  let newOptionA = '';
-  let newOptionB = '';
+  let newTitle = $state('');
+  let newOptionA = $state('');
+  let newOptionB = $state('');
 
   // State für "Umfrage bearbeiten" (Inline-Edit)
-  let editingId = null;
-  let editTitle = '';
-  let editOptionA = '';
-  let editOptionB = '';
+  let editingId = $state(null);
+  let editTitle = $state('');
+  let editOptionA = $state('');
+  let editOptionB = $state('');
 
   function clearMessages() {
     errorMessage = '';
@@ -244,7 +256,7 @@
       Deine Sitzung wird sicher über ein geschütztes HttpOnly-Cookie verwaltet.
     </p>
 
-    <form on:submit|preventDefault={handleAuthSubmit} class="space-y-4">
+    <form onsubmit={preventDefault(handleAuthSubmit)} class="space-y-4">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label for="auth-username" class="block text-sm font-semibold text-slate-900 mb-1">
@@ -286,7 +298,7 @@
 
         <button
           type="button"
-          on:click={() => {
+          onclick={() => {
             isRegisterMode = !isRegisterMode;
             clearMessages();
           }}
@@ -307,14 +319,14 @@
       </div>
       <button
         type="button"
-        on:click={handleLogout}
+        onclick={handleLogout}
         class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold text-sm transition"
       >
         Abmelden
       </button>
     </div>
 
-    <form on:submit|preventDefault={handleCreateSurvey} class="space-y-4">
+    <form onsubmit={preventDefault(handleCreateSurvey)} class="space-y-4">
       <div>
         <label for="new-title" class="block text-sm font-semibold text-slate-900 mb-1">
           Frage / Titel der Umfrage
@@ -388,7 +400,7 @@
         <article class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-300">
           {#if editingId === survey.id}
             <!-- INLINE BEARBEITUNGS-MODUS (Update) -->
-            <form on:submit|preventDefault={() => saveEdit(survey.id)} class="space-y-4">
+            <form onsubmit={preventDefault(() => saveEdit(survey.id))} class="space-y-4">
               <h3 class="text-lg font-bold text-slate-900">Umfrage bearbeiten</h3>
 
               <div>
@@ -449,7 +461,7 @@
                 </button>
                 <button
                   type="button"
-                  on:click={cancelEdit}
+                  onclick={cancelEdit}
                   class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold text-sm"
                 >
                   Abbrechen
@@ -471,14 +483,14 @@
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    on:click={() => startEdit(survey)}
+                    onclick={() => startEdit(survey)}
                     class="px-3.5 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold text-xs sm:text-sm transition"
                   >
                     Bearbeiten
                   </button>
                   <button
                     type="button"
-                    on:click={() => handleDelete(survey.id)}
+                    onclick={() => handleDelete(survey.id)}
                     class="px-3.5 py-2 rounded-lg bg-red-700 hover:bg-red-800 text-white font-semibold text-xs sm:text-sm transition"
                   >
                     Löschen
@@ -491,7 +503,7 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
               <button
                 type="button"
-                on:click={() => handleVote(survey.id, 'a')}
+                onclick={() => handleVote(survey.id, 'a')}
                 class="flex items-center justify-between p-4 rounded-xl border-2 border-indigo-700 bg-indigo-50 hover:bg-indigo-100 text-slate-900 font-semibold text-left transition focus:ring-2 focus:ring-indigo-700"
               >
                 <span>A: {survey.option_a}</span>
@@ -502,7 +514,7 @@
 
               <button
                 type="button"
-                on:click={() => handleVote(survey.id, 'b')}
+                onclick={() => handleVote(survey.id, 'b')}
                 class="flex items-center justify-between p-4 rounded-xl border-2 border-teal-700 bg-teal-50 hover:bg-teal-100 text-slate-900 font-semibold text-left transition focus:ring-2 focus:ring-teal-700"
               >
                 <span>B: {survey.option_b}</span>

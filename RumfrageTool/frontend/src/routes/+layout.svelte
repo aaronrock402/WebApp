@@ -1,5 +1,12 @@
 <script>
   import '../app.css';
+  /**
+   * @typedef {Object} Props
+   * @property {import('svelte').Snippet} [children]
+   */
+
+  /** @type {Props} */
+  let { children } = $props();
 </script>
 
 <div class="min-h-screen flex flex-col">
@@ -18,7 +25,7 @@
 
   <!-- Semantischer Hauptbereich (wächst dank flex-1 automatisch auf volle Höhe) -->
   <main class="flex-1 max-w-4xl w-full mx-auto px-4 py-6 sm:py-8">
-    <slot />
+    {@render children?.()}
   </main>
 
   <!-- Semantischer Footer -->
