@@ -1,0 +1,180 @@
+Kein Problem — ich erklär dir den **ganz normalen Arbeitsalltag** mit diesem Projekt, Schritt für Schritt und ohne Fachsprache.
+
+## Die Grundidee in einem Satz
+
+Docker startet deine komplette App (Datenbank, Backend, Frontend) mit **einem Befehl**. Du musst nichts einzeln installieren oder starten. Du sagst nur "an" und später "aus".
+
+---
+
+## Dein Workflow beim Arbeiten
+
+### 1. Am Anfang: Colima starten (die "Maschine" anwerfen)
+
+Colima ist der Motor, auf dem Docker läuft. Den musst du **einmal pro Tag** (bzw. nach jedem Neustart deines Macs) anwerfen:
+
+```bash
+colima start
+```
+
+Läuft Colima schon, sagt es dir das einfach — dann ist alles gut.
+
+### 2. Ins Projekt wechseln
+
+```bash
+cd ~/Documents/DHBW_Projekte_Ordner/WebProg_Ordner/WebApp/RumfrageTool
+```
+
+Das ist der Ordner, in dem deine `docker-compose.yml` liegt. Docker-Befehle funktionieren nur **in diesem Ordner**.
+
+### 3. App starten
+
+```bash
+docker compose up -d
+```
+
+Das `-d` ist der Trick für den Alltag: Es startet alles **im Hintergrund**. Du bekommst dein Terminal sofort zurück und kannst weiterarbeiten. (Ohne `-d` klebt das Terminal an den Logs fest — das hattest du gerade.)
+
+Nach ein paar Sekunden läuft deine App.
+
+### 4. Arbeiten / Benutzen
+
+Öffne im Browser:
+
+- **Deine App:** http://localhost:5173
+
+Jetzt kannst du die App benutzen und daran entwickeln.
+
+### 5. Zwischendurch: Nachsehen, ob alles läuft
+
+```bash
+docker compose ps
+```
+
+Zeigt dir eine Liste. Steht überall `running` oder `healthy` → alles gut.
+
+Willst du sehen, was die App gerade tut (z. B. bei einem Fehler):
+
+```bash
+docker compose logs -f
+```
+
+(Mit `Strg + C` beendest du nur das Zuschauen — die App läuft weiter.)
+
+### 6. Am Ende: App ausmachen
+
+Wenn du Feierabend machst:
+
+```bash
+docker compose down
+```
+
+Das stoppt und räumt alle Container auf. **Deine Datenbank-Daten bleiben erhalten** (die liegen sicher in einem Volume). Beim nächsten `docker compose up -d` ist alles wieder da.
+
+---
+
+## Der typische Tag, ganz kurz
+
+```bash
+colima start                                              # Motor an (1x morgens)
+cd ~/Documents/.../RumfrageTool                           # ins Projekt
+docker compose up -d                                      # App an
+# ... arbeiten, Browser: localhost:5173 ...
+docker compose down                                       # App aus (Feierabend)
+```
+
+---
+
+## Ein wichtiger Spezialfall: Du hast am Code was geändert
+
+Wenn du am **Quellcode** deiner App etwas änderst (z. B. im Frontend oder Backend), musst du die Images **neu bauen**, damit Docker die Änderung mitbekommt:
+
+```bash
+docker compose up -d --build
+```
+
+Das `--build` sorgt dafür, dass Docker deinen geänderten Code neu einpackt. (Ohne `--build` läuft weiter die alte Version.)
+
+---
+
+## Die 5 Befehle, die du wirklich brauchst
+
+| Befehl | Was es macht |
+|---|---|
+| `colima start` | Den Docker-Motor anwerfen (1x pro Tag) |
+| `docker compose up -d` | App im Hintergrund starten |
+| `docker compose ps` | Nachsehen, ob alles läuft |
+| `docker compose up -d --build` | App neu starten **nach Code-Änderung** |
+| `docker compose down` | App stoppen |
+
+Mehr brauchst du für den Alltag erstmal nicht. Wenn du willst, erkläre ich dir als Nächstes gerne, **was die einzelnen Container** (db, api, logger, frontend, rabbitmq) in deiner App eigentlich tun — dann verstehst du besser, was da im Hintergrund passiert. Sag einfach Bescheid.
+
+
+---
+
+Ja, genau — machen wir einmal den sauberen "Aus und wieder An"-Durchlauf. Das ist auch die beste Übung.
+
+## 1. Stoppen
+
+Dein aktuelles Terminal hängt ja noch an den Logs (Vordergrund). Zwei Schritte:
+
+**a) Erst die Log-Ansicht verlassen** — drück im laufenden Terminal:
+
+```
+Strg + C
+```
+
+Das löst dich von den Logs und fährt die Container herunter. Warte, bis du deinen normalen Eingabe-Prompt zurückhast.
+
+**b) Dann sauber aufräumen** (zur Sicherheit, falls noch was läuft):
+
+```bash
+docker compose down
+```
+
+Du siehst dann, wie die Container und das Netzwerk entfernt werden. **Deine Datenbank-Daten bleiben erhalten** — die liegen im Volume `pgdata`, das bleibt bestehen.
+
+## 2. Prüfen, dass wirklich alles aus ist
+
+```bash
+docker compose ps
+```
+
+Die Liste sollte jetzt **leer** sein (keine Container). Dann ist alles sauber gestoppt.
+
+## 3. Richtig neu starten — diesmal im Hintergrund
+
+```bash
+docker compose up -d
+```
+
+Das `-d` startet alles im Hintergrund, und du bekommst dein Terminal sofort zurück. (Ein `--build` brauchst du **nicht**, solange du am Code nichts geändert hast — die Images sind ja schon gebaut.)
+
+## 4. Prüfen, ob alles läuft
+
+```bash
+docker compose ps
+```
+
+Jetzt sollten alle fünf Container als `running` bzw. `healthy` dastehen.
+
+## 5. App öffnen
+
+Im Browser: http://localhost:5173
+
+---
+
+### Kurz als Block zum Durchgehen
+
+```bash
+# im laufenden Terminal:  Strg + C
+docker compose down        # aufräumen
+docker compose ps          # -> leer
+docker compose up -d       # neu starten (Hintergrund)
+docker compose ps          # -> alles running/healthy
+```
+
+Zwei kleine Hinweise:
+- **Colima muss weiterlaufen** — das stoppst du mit `docker compose down` *nicht*, und das ist auch gut so. Nur falls du den Mac neu gestartet hast, vorher nochmal `colima start`.
+- Beim ersten `up` nach dem `down` geht's **schneller** als vorhin, weil nichts mehr neu heruntergeladen oder gebaut werden muss.
+
+Mach den Durchlauf mal — und sag mir, was `docker compose ps` nach dem Neustart anzeigt. Dann sehen wir gemeinsam, ob alles sauber oben ist.
