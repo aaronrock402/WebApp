@@ -1,9 +1,6 @@
 <script>
-  import { preventDefault } from 'svelte/legacy';
-
   import { env } from '$env/dynamic/public';
 
-  
   /**
    * @typedef {Object} Props
    * @property {any} data - Daten aus dem Server-Side Rendering (+page.server.js)
@@ -256,7 +253,7 @@
       Deine Sitzung wird sicher über ein geschütztes HttpOnly-Cookie verwaltet.
     </p>
 
-    <form onsubmit={preventDefault(handleAuthSubmit)} class="space-y-4">
+    <form onsubmit={(event) => { event.preventDefault(); handleAuthSubmit(); }} class="space-y-4">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label for="auth-username" class="block text-sm font-semibold text-slate-900 mb-1">
@@ -326,7 +323,7 @@
       </button>
     </div>
 
-    <form onsubmit={preventDefault(handleCreateSurvey)} class="space-y-4">
+    <form onsubmit={(event) => { event.preventDefault(); handleCreateSurvey(); }} class="space-y-4">
       <div>
         <label for="new-title" class="block text-sm font-semibold text-slate-900 mb-1">
           Frage / Titel der Umfrage
@@ -400,7 +397,7 @@
         <article class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-300">
           {#if editingId === survey.id}
             <!-- INLINE BEARBEITUNGS-MODUS (Update) -->
-            <form onsubmit={preventDefault(() => saveEdit(survey.id))} class="space-y-4">
+            <form onsubmit={(event) => { event.preventDefault(); saveEdit(survey.id); }} class="space-y-4">
               <h3 class="text-lg font-bold text-slate-900">Umfrage bearbeiten</h3>
 
               <div>

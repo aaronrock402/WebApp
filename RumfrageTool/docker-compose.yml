@@ -64,10 +64,13 @@ services:
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
-      interval: 30s
+      # Prüft, ob der Heartbeat (geschrieben nur bei aktiver RabbitMQ-Verbindung)
+      # jünger als 30s ist -> erkennt echte Verbindung, nicht nur "Node läuft".
+      test: ["CMD", "node", "-e", "const fs=require('fs');try{process.exit(Date.now()-Number(fs.readFileSync('/tmp/logger-heartbeat','utf8'))<30000?0:1)}catch(e){process.exit(1)}"]
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+      start_period: 15s
 
   # 5. Frontend: SvelteKit (SSR)
   frontend:
