@@ -27,6 +27,8 @@
   let isRegisterMode = $state(false);
   let username = $state('');
   let password = $state('');
+  // Steuert, ob das Auth-Formular (statt des ruhigen Hinweises) angezeigt wird
+  let showAuthForm = $state(false);
 
   // State für "Neue Umfrage erstellen"
   let newTitle = $state('');
@@ -42,6 +44,18 @@
   function clearMessages() {
     errorMessage = '';
     statusMessage = '';
+  }
+
+  // Öffnet das Auth-Formular im gewünschten Modus (vom Header oder Hinweis aus)
+  function openAuth(register) {
+    clearMessages();
+    isRegisterMode = register;
+    showAuthForm = true;
+  }
+
+  function closeAuth() {
+    clearMessages();
+    showAuthForm = false;
   }
 
   // --- 1. Authentifizierung (Login / Register / Logout) ---
@@ -66,6 +80,7 @@
       user = result.user;
       username = '';
       password = '';
+      showAuthForm = false;
       statusMessage = isRegisterMode
         ? `Willkommen, ${user.username}! Dein Account wurde erstellt.`
         : `Willkommen zurück, ${user.username}!`;
@@ -213,15 +228,63 @@
   }
 </script>
 
-<!-- Hauptüberschrift (h1) für klare Dokumentstruktur -->
-<div class="mb-8">
-  <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">
-    Entweder-Oder-Umfragen in Echtzeit
-  </h1>
-  <p class="mt-1 text-base text-slate-700">
-    Stimme sofort mit einem Klick ab oder melde dich an, um eigene Umfragen zu verwalten.
-  </p>
-</div>
+<!-- Semantischer Header: Home-Navigation links, Benutzerstatus rechts -->
+<header class="bg-indigo-900 text-white shadow-md">
+  <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+    <!-- Logo + Titel: echter Link auf / (Startseite), tastaturbedienbar -->
+    <a
+      href="/"
+      aria-label="PulsePoll &ndash; Zur Startseite"
+      class="flex items-center gap-2 -ml-2 px-2 py-1 rounded-lg hover:bg-indigo-800 transition focus:outline-none focus:ring-2 focus:ring-white/80"
+    >
+      <span class="text-2xl" aria-hidden="true">📊</span>
+      <span class="text-xl font-bold tracking-tight">PulsePoll</span>
+    </a>
+
+    <!-- Benutzer-/Login-Aktionen -->
+    <nav class="flex items-center gap-2 sm:gap-3" aria-label="Benutzerkonto">
+      {#if user}
+        <span class="text-sm font-semibold text-white max-w-[8rem] truncate" title={user.username}>
+          {user.username}
+        </span>
+        <button
+          type="button"
+          onclick={handleLogout}
+          class="px-3 py-1.5 rounded-lg bg-indigo-800 hover:bg-indigo-700 text-white font-medium text-sm transition focus:outline-none focus:ring-2 focus:ring-white/80"
+        >
+          Abmelden
+        </button>
+      {:else}
+        <button
+          type="button"
+          onclick={() => openAuth(false)}
+          class="px-3 py-1.5 rounded-lg bg-indigo-800 hover:bg-indigo-700 text-white font-medium text-sm transition focus:outline-none focus:ring-2 focus:ring-white/80"
+        >
+          Anmelden
+        </button>
+        <button
+          type="button"
+          onclick={() => openAuth(true)}
+          class="px-3 py-1.5 rounded-lg bg-white hover:bg-indigo-50 text-indigo-900 font-semibold text-sm transition focus:outline-none focus:ring-2 focus:ring-white/80"
+        >
+          Registrieren
+        </button>
+      {/if}
+    </nav>
+  </div>
+</header>
+
+<!-- Semantischer Hauptbereich (wächst dank flex-1 auf volle Höhe) -->
+<main class="flex-1 w-full max-w-4xl mx-auto px-4 py-6 sm:py-8">
+  <!-- Hero: klarer, knapper Seiteneinstieg -->
+  <div class="mb-8">
+    <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">
+      Entweder-Oder-Umfragen
+    </h1>
+    <p class="mt-1 text-base text-slate-600">
+      Stimme direkt ab oder erstelle deine eigene Umfrage.
+    </p>
+  </div>
 
 <!-- Barrierefreie Status- und Fehlermeldungen (aria-live) -->
 {#if errorMessage}
@@ -243,137 +306,144 @@
   </div>
 {/if}
 
-<!-- BEREICH 1: Authentifizierung & Umfrage-Erstellung -->
-<section class="mb-10 bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-300">
-  {#if !user}
-    <h2 class="text-xl font-bold text-slate-900 mb-2">
-      {isRegisterMode ? 'Neuen Account registrieren' : 'Anmelden zum Erstellen & Bearbeiten'}
-    </h2>
-    <p class="text-sm text-slate-700 mb-4">
-      Deine Sitzung wird sicher über ein geschütztes HttpOnly-Cookie verwaltet.
-    </p>
+<!-- BEREICH 1: Umfrage erstellen (eingeloggt) bzw. Anmelde-Hinweis / -Formular -->
+<section class="mb-10">
+  {#if user}
+    <!-- Eingeloggt: ruhige, kompakte Box nur für die neue Umfrage (keine Accountinfos) -->
+    <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-200">
+      <h2 class="text-xl font-bold text-slate-900 mb-4">Neue Umfrage</h2>
 
-    <form onsubmit={(event) => { event.preventDefault(); handleAuthSubmit(); }} class="space-y-4">
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <form onsubmit={(event) => { event.preventDefault(); handleCreateSurvey(); }} class="space-y-4">
         <div>
-          <label for="auth-username" class="block text-sm font-semibold text-slate-900 mb-1">
-            Benutzername
+          <label for="new-title" class="block text-sm font-semibold text-slate-900 mb-1">
+            Frage / Titel der Umfrage
           </label>
           <input
-            id="auth-username"
+            id="new-title"
             type="text"
-            bind:value={username}
+            bind:value={newTitle}
             required
-             minlength="3"
-            placeholder="z.B. Lisa"
+            placeholder="z.B. Was grillen wir am Freitag?"
             class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
           />
         </div>
-        <div>
-          <label for="auth-password" class="block text-sm font-semibold text-slate-900 mb-1">
-            Passwort
-          </label>
-          <input
-            id="auth-password"
-            type="password"
-            bind:value={password}
-            required
-            minlength="4"
-            placeholder="Mindestens 4 Zeichen"
-            class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
-          />
-        </div>
-      </div>
 
-      <div class="flex flex-wrap items-center gap-3 pt-1">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="new-opt-a" class="block text-sm font-semibold text-slate-900 mb-1">
+              Antwort A
+            </label>
+            <input
+              id="new-opt-a"
+              type="text"
+              bind:value={newOptionA}
+              required
+              placeholder="z.B. Klassische Bratwurst"
+              class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+            />
+          </div>
+          <div>
+            <label for="new-opt-b" class="block text-sm font-semibold text-slate-900 mb-1">
+              Antwort B
+            </label>
+            <input
+              id="new-opt-b"
+              type="text"
+              bind:value={newOptionB}
+              required
+              placeholder="z.B. Grillkäse & Gemüse"
+              class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+            />
+          </div>
+        </div>
+
         <button
           type="submit"
-          class="px-5 py-2.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold transition focus:ring-2 focus:ring-offset-2 focus:ring-indigo-700"
+          class="w-full sm:w-auto px-6 py-2.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold transition focus:ring-2 focus:ring-offset-2 focus:ring-indigo-700"
         >
-          {isRegisterMode ? 'Jetzt registrieren' : 'Einloggen'}
+          Umfrage veröffentlichen
         </button>
-
+      </form>
+    </div>
+  {:else if showAuthForm}
+    <!-- Ausgeloggt + Anmelden angefordert: Auth-Formular (statt des Hinweises) -->
+    <div class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-200">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <h2 class="text-xl font-bold text-slate-900">
+          {isRegisterMode ? 'Registrieren' : 'Anmelden'}
+        </h2>
         <button
           type="button"
-          onclick={() => {
-            isRegisterMode = !isRegisterMode;
-            clearMessages();
-          }}
-          class="px-4 py-2.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-medium transition"
+          onclick={closeAuth}
+          aria-label="Formular schließen"
+          class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-700"
         >
-          {isRegisterMode ? 'Stattdessen einloggen' : 'Noch keinen Account? Registrieren'}
+          Schließen
         </button>
       </div>
-    </form>
+
+      <form onsubmit={(event) => { event.preventDefault(); handleAuthSubmit(); }} class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="auth-username" class="block text-sm font-semibold text-slate-900 mb-1">
+              Benutzername
+            </label>
+            <input
+              id="auth-username"
+              type="text"
+              bind:value={username}
+              required
+              minlength="3"
+              placeholder="z.B. Lisa"
+              class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+            />
+          </div>
+          <div>
+            <label for="auth-password" class="block text-sm font-semibold text-slate-900 mb-1">
+              Passwort
+            </label>
+            <input
+              id="auth-password"
+              type="password"
+              bind:value={password}
+              required
+              minlength="4"
+              placeholder="Mindestens 4 Zeichen"
+              class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
+            />
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 pt-1">
+          <button
+            type="submit"
+            class="px-5 py-2.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold transition focus:ring-2 focus:ring-offset-2 focus:ring-indigo-700"
+          >
+            {isRegisterMode ? 'Jetzt registrieren' : 'Einloggen'}
+          </button>
+
+          <button
+            type="button"
+            onclick={() => { isRegisterMode = !isRegisterMode; clearMessages(); }}
+            class="text-sm font-medium text-indigo-700 hover:text-indigo-900 underline underline-offset-2 transition"
+          >
+            {isRegisterMode ? 'Stattdessen anmelden' : 'Noch keinen Account? Registrieren'}
+          </button>
+        </div>
+      </form>
+    </div>
   {:else}
-    <!-- Eingeloggter Zustand: Header + Formular für neue Umfrage -->
-    <div class="flex flex-wrap items-center justify-between gap-4 pb-5 mb-5 border-b border-slate-200">
-      <div>
-        <h2 class="text-xl font-bold text-slate-900">Neue Umfrage starten</h2>
-        <p class="text-sm text-slate-700">
-          Angemeldet als <strong class="text-indigo-900">{user.username}</strong>
-        </p>
-      </div>
+    <!-- Ausgeloggt: ruhiger Hinweis statt großer Login-Maske -->
+    <div class="bg-white p-5 sm:p-6 rounded-xl border border-dashed border-slate-300">
+      <p class="text-slate-600">Melde dich an, um eigene Umfragen zu erstellen.</p>
       <button
         type="button"
-        onclick={handleLogout}
-        class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold text-sm transition"
+        onclick={() => openAuth(false)}
+        class="mt-3 px-5 py-2.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold transition focus:ring-2 focus:ring-offset-2 focus:ring-indigo-700"
       >
-        Abmelden
+        Anmelden
       </button>
     </div>
-
-    <form onsubmit={(event) => { event.preventDefault(); handleCreateSurvey(); }} class="space-y-4">
-      <div>
-        <label for="new-title" class="block text-sm font-semibold text-slate-900 mb-1">
-          Frage / Titel der Umfrage
-        </label>
-        <input
-          id="new-title"
-          type="text"
-          bind:value={newTitle}
-          required
-          placeholder="z.B. Was grillen wir am Freitag?"
-          class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
-        />
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label for="new-opt-a" class="block text-sm font-semibold text-slate-900 mb-1">
-            Antwort-Option A
-          </label>
-          <input
-            id="new-opt-a"
-            type="text"
-            bind:value={newOptionA}
-            required
-            placeholder="z.B. Klassische Bratwurst"
-            class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
-          />
-        </div>
-        <div>
-          <label for="new-opt-b" class="block text-sm font-semibold text-slate-900 mb-1">
-            Antwort-Option B
-          </label>
-          <input
-            id="new-opt-b"
-            type="text"
-            bind:value={newOptionB}
-            required
-            placeholder="z.B. Grillkäse & Gemüse"
-            class="w-full px-3.5 py-2.5 rounded-lg border border-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-700"
-          />
-        </div>
-      </div>
-
-      <button
-        type="submit"
-        class="w-full sm:w-auto px-6 py-2.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold transition focus:ring-2 focus:ring-offset-2 focus:ring-indigo-700"
-      >
-        Umfrage veröffentlichen
-      </button>
-    </form>
   {/if}
 </section>
 
@@ -388,13 +458,13 @@
       Noch keine Umfragen vorhanden. Erstelle jetzt die erste Umfrage!
     </p>
   {:else}
-    <div class="space-y-5">
+    <div class="space-y-6">
       {#each surveys as survey (survey.id)}
         {@const totalVotes = survey.votes_a + survey.votes_b}
         {@const percentA = getPercent(survey.votes_a, totalVotes)}
         {@const percentB = 100 - percentA}
 
-        <article class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-300">
+        <article class="bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-200">
           {#if editingId === survey.id}
             <!-- INLINE BEARBEITUNGS-MODUS (Update) -->
             <form onsubmit={(event) => { event.preventDefault(); saveEdit(survey.id); }} class="space-y-4">
@@ -468,27 +538,27 @@
           {:else}
             <!-- STANDARD ANZEIGE- & ABSTIMMUNGS-MODUS -->
             <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
-              <div>
-                <h3 class="text-lg sm:text-xl font-bold text-slate-900">{survey.title}</h3>
-                <p class="text-xs sm:text-sm text-slate-700 mt-0.5">
-                  Erstellt von <span class="font-semibold">{survey.author || 'Unbekannt'}</span>
-                  &bull; {totalVotes} {totalVotes === 1 ? 'Stimme' : 'Stimmen'} insgesamt
+              <div class="min-w-0">
+                <h3 class="text-lg sm:text-xl font-bold text-slate-900 break-words">{survey.title}</h3>
+                <p class="text-xs sm:text-sm text-slate-500 mt-0.5">
+                  Erstellt von <span class="font-semibold text-slate-700">{survey.author || 'Unbekannt'}</span>
+                  &middot; {totalVotes} {totalVotes === 1 ? 'Stimme' : 'Stimmen'}
                 </p>
               </div>
 
               {#if user}
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
                     onclick={() => startEdit(survey)}
-                    class="px-3.5 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold text-xs sm:text-sm transition"
+                    class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-medium text-xs sm:text-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-700"
                   >
                     Bearbeiten
                   </button>
                   <button
                     type="button"
                     onclick={() => handleDelete(survey.id)}
-                    class="px-3.5 py-2 rounded-lg bg-red-700 hover:bg-red-800 text-white font-semibold text-xs sm:text-sm transition"
+                    class="px-3 py-1.5 rounded-lg border border-red-300 bg-white hover:bg-red-50 text-red-700 font-medium text-xs sm:text-sm transition focus:outline-none focus:ring-2 focus:ring-red-600"
                   >
                     Löschen
                   </button>
@@ -535,3 +605,4 @@
     </div>
   {/if}
 </section>
+</main>
