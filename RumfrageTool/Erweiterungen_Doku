@@ -1,0 +1,13 @@
+- **Datei-Uploads für Umfragen eingebaut**: PDF, JPG, PNG bis 10 MB; Upload, Anzeige/Preview und Download möglich. **(Anforderung)**
+- **ClamAV-Virenscan ergänzt**: Dateien werden vor Freigabe gescannt; infizierte Dateien werden blockiert und gelöscht. *(ClamAV selbst war keine explizite Anforderung, sondern unsere technische Umsetzung.)*
+- **Dateien werden beim Löschen einer Umfrage auch physisch gelöscht**, damit keine verwaisten Uploads übrig bleiben.
+- **Mehrfachabstimmungen verhindert**: pro Browserprofil nur noch eine Stimme je Umfrage; Umsetzung über `voter_id`-Cookie + neue Tabelle `survey_votes`.
+- **Abstimmung technisch abgesichert**: DB-Transaktion + Unique-Constraint verhindern auch parallele Doppelabstimmungen.
+- **RabbitMQ erweitert**: neue Events für Datei-Upload/-Blockierung; `SURVEY_VOTED` wird erst nach erfolgreicher Abstimmung veröffentlicht. **(Anforderung: Kommunikation eigener Services über RabbitMQ)**
+- **Smoke-Test des gesamten Systems durchgeführt**: Registrierung/Login, Umfragen erstellen/bearbeiten/löschen, Abstimmen, Upload, Persistenz, RabbitMQ/Logger und Docker-Services geprüft.
+- **Projekt-Dokumentation aktualisiert**: Architektur, ClamAV, Uploads, `survey_files`, `survey_votes`, neue API-Endpunkte und aktueller Datenfluss dokumentiert.
+- **`main` aktualisiert**: aktueller getesteter Stand von `Leon_Spielwiese` ist jetzt vollständig in `main`; beide Remote-Stände sind sauber und aktuell.
+- **UI/Startseite wurde bereits aufgeräumt und verbessert**; weiterer kleiner UI-Polish ist noch geplant.
+
+
+- **Offener Punkt:** Der Virenscan beim tatsächlichen Datei-Upload konnte wegen des Problems mit der EICAR-Testdatei nicht vollständig end-to-end getestet werden; der ClamAV-Scan selbst wurde separat erfolgreich geprüft.
