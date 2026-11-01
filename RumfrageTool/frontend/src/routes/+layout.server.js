@@ -2,7 +2,19 @@ import { env } from '$env/dynamic/private';
 
 const INTERNAL_API_URL = env.INTERNAL_API_URL || 'http://backend-api:3000';
 
-/** @type {import('./$types').PageServerLoad} */
+/**
+ * Lädt den eingeloggten Benutzer UND alle Umfragen serverseitig.
+ *
+ * Bewusst im Layout (statt pro Seite), damit die Sidebar auf JEDER Route den
+ * Login-Status und die Umfrage-Anzahl kennt. Die Dashboard-Seite greift über
+ * `data.surveys` auf dieselben Daten zu (Layout-Daten werden in Page-Daten
+ * zusammengeführt).
+ *
+ * Endpunkte und Cookie-Weiterleitung sind unverändert gegenüber der bisherigen
+ * +page.server.js.
+ *
+ * @type {import('./$types').LayoutServerLoad}
+ */
 export async function load({ fetch, request }) {
   // Liest das HttpOnly-Cookie aus dem Browser-Request aus, um es an Express weiterzuleiten
   const cookieHeader = request.headers.get('cookie') || '';
