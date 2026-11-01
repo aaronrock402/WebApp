@@ -385,22 +385,54 @@ app.post('/api/surveys/:id/vote', async (req, res) => {
   // Da wir oben strikt auf 'a' oder 'b' geprüft haben, ist der Spaltenname 100% sicher
   const column = option === 'a' ? 'votes_a' : 'votes_b';
 
+  // Voter-Token: immer das stabile Browser-Cookie, unabhängig vom Login-Status
+  let voterToken = req.cookies.voter_id;
+  if (!voterToken) {
+    voterToken = crypto.randomUUID();
+    res.cookie('voter_id', voterToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+      maxAge: 365 * 24 * 60 * 60 * 1000 // 1 Jahr
+    });
+  }
+
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    const surveyCheck = await client.query('SELECT id FROM surveys WHERE id = $1', [surveyId]);
+    if (surveyCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Umfrage nicht gefunden.' });
+    }
+
+    // Atomares Einfügen: bei Duplikat wird nichts eingefügt (kein Fehler, aber auch kein Datensatz)
+    const voteInsert = await client.query(
+      'INSERT INTO survey_votes (survey_id, voter_token) VALUES ($1, $2) ON CONFLICT (survey_id, voter_token) DO NOTHING RETURNING id',
+      [surveyId, voterToken]
+    );
+    if (voteInsert.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Du hast bei dieser Umfrage bereits abgestimmt.' });
+    }
+
+    const result = await client.query(
       `UPDATE surveys SET ${column} = ${column} + 1 WHERE id = $1 RETURNING *`,
       [surveyId]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Umfrage nicht gefunden.' });
-    }
+    await client.query('COMMIT');
 
     const updated = result.rows[0];
     publishEvent('SURVEY_VOTED', { surveyId: updated.id, votedOption: option.toUpperCase() });
 
     res.json(updated);
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: 'Fehler beim Abstimmen.' });
+  } finally {
+    client.release();
   }
 });
 

@@ -193,6 +193,7 @@
       const res = await fetch(`${API_URL}/api/surveys/${surveyId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Cookies (voter_id / Auth-Token) mitsenden
         body: JSON.stringify({ option })
       });
 

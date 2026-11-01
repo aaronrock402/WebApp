@@ -28,7 +28,16 @@ CREATE TABLE IF NOT EXISTS survey_files (
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Start-Daten (Seed Data), damit die App beim ersten Start direkt gefüllt aussieht
+-- 4. Tabelle zur Verhinderung von Mehrfachabstimmungen pro Person und Umfrage
+CREATE TABLE IF NOT EXISTS survey_votes (
+    id SERIAL PRIMARY KEY,
+    survey_id INTEGER REFERENCES surveys(id) ON DELETE CASCADE,
+    voter_token VARCHAR(255) NOT NULL,
+    voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(survey_id, voter_token)
+);
+
+-- 5. Start-Daten (Seed Data), damit die App beim ersten Start direkt gefüllt aussieht
 INSERT INTO surveys (title, option_a, option_b, votes_a, votes_b)
 VALUES 
     ('Was grillen wir beim Semester-Abschluss am Freitag?', 'Klassische Bratwurst', 'Grillkäse & Gemüse', 14, 19),
