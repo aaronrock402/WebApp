@@ -24,10 +24,23 @@ RumfrageTool/
 │   └── src/
 │       ├── app.html
 │       ├── app.css
+│       ├── lib/
+│       │   ├── Alert.svelte
+│       │   ├── api.js
+│       │   └── SurveyList.svelte
 │       └── routes/
+│           ├── +layout.server.js
 │           ├── +layout.svelte
-│           ├── +page.server.js
-│           └── +page.svelte
+│           ├── +page.svelte               # Dashboard
+│           ├── create/
+│           │   ├── +page.js
+│           │   └── +page.svelte
+│           ├── login/
+│           │   └── +page.svelte
+│           ├── register/
+│           │   └── +page.svelte
+│           └── surveys/
+│               └── +page.svelte
 ├── backend-api/
 │   ├── Dockerfile
 │   ├── index.js
@@ -37,6 +50,7 @@ RumfrageTool/
 │   ├── index.js
 │   └── package.json
 ├── documentation                 # zusätzliche, nicht ausführbare Projektnotizen
+├── Erweiterungen_Doku            # Änderungsnotizen zu Upload, ClamAV und Abstimmungsschutz
 └── Projektuebersicht-KI-Prompt.md
 ```
 
@@ -44,21 +58,23 @@ Docker Compose definiert zwei benannte Volumes: `pgdata` (PostgreSQL-Daten) und 
 
 ## Architektur und Datenfluss
 
-- **Frontend:** SvelteKit mit Svelte 5 und Tailwind CSS. Die Hauptroute wird serverseitig geladen. `frontend/src/routes/+page.server.js` fragt beim Backend den eingeloggten Nutzer und die Umfragen ab. Der Cookie des Browser-Requests wird zur Authentifizierungsabfrage weitergeleitet.
-- **Browser-Aktionen:** Das Frontend ruft die REST-API auf. Die öffentliche API-Adresse wird über `PUBLIC_API_URL` konfiguriert; im Compose-Setup ist sie `http://localhost:3000`.
+- **Frontend:** SvelteKit mit Svelte 5 und Tailwind CSS. Das gemeinsame Layout und die Navigation liegen in `frontend/src/routes/+layout.svelte`. Der zugehörige Server-Load `frontend/src/routes/+layout.server.js` fragt bei jeder Route den eingeloggten Nutzer und alle Umfragen ab und leitet das Browser-Cookie zur Authentifizierungsabfrage weiter. Die Startseite (`/`) ist ein Dashboard; die weiteren Ansichten liegen unter `/surveys`, `/create`, `/login` und `/register`.
+- **Browser-Aktionen:** `frontend/src/lib/api.js` stellt die öffentliche API-Basisadresse bereit. Browser-Aufrufe gehen an `PUBLIC_API_URL`; im Compose-Setup ist dies `http://localhost:3000`. Gemeinsame Umfragekarten und Interaktionen liegen in `frontend/src/lib/SurveyList.svelte`; Meldungen werden über `Alert.svelte` dargestellt.
 - **Backend:** `backend-api/index.js` ist ein Express-Server. Er stellt Authentifizierungs-, Umfrage-, Datei-Upload- und Healthcheck-Endpunkte bereit, greift mit `pg` auf PostgreSQL zu, veröffentlicht Audit-Events in RabbitMQ und scannt hochgeladene Dateien mit ClamAV über das INSTREAM-TCP-Protokoll.
-- **ClamAV:** Läuft als eigenständiger Compose-Service (`clamav/clamav-debian:stable`). Die API verbindet sich beim Start per TCP auf Port 3310; bei Nichtverfügbarkeit wird alle 15 Sekunden ein erneuter Verbindungsversuch unternommen. Ist ClamAV nicht erreichbar, werden Upload-Anfragen mit `503` abgewiesen.
+- **ClamAV:** Läuft als eigenständiger Compose-Service (`clamav/clamav-debian:stable`) und ist nur im Compose-Netzwerk erreichbar. Die API verbindet sich per TCP auf Port 3310; bei Nichtverfügbarkeit wird alle 15 Sekunden ein erneuter Verbindungsversuch unternommen. Compose wartet beim ClamAV-Healthcheck bis zu 180 Sekunden (`start_period`); die API hängt aber nicht mit `depends_on` von ClamAV ab. Ist ClamAV beim Upload noch nicht erreichbar, werden Upload-Anfragen mit `503` abgewiesen.
 - **Logger:** `backend-logger/index.js` konsumiert Nachrichten aus der Queue `survey_events` und gibt die Ereignisse in der Container-Konsole aus.
 - **Datenbank:** PostgreSQL speichert Nutzer, Umfragen, Abstimmungstoken und Datei-Metadaten. `db/init.sql` legt vier Tabellen an und fügt zwei Beispielumfragen ein. Das Init-Skript wird beim erstmaligen Initialisieren des Datenbank-Volumes ausgeführt.
 - **Lokale Orchestrierung:** `docker-compose.yml` verbindet die sechs Services `frontend`, `backend-api`, `backend-logger`, `db`, `rabbitmq` und `clamav`. Container kommunizieren über ihre Compose-Service-Namen. Abhängigkeiten und Healthchecks sind in Compose definiert.
 
 ### Verhalten der Anwendung
 
-- Die Anwendung hat eine zentrale Seite. `+page.server.js` lädt beim SSR parallel den aktuellen Nutzer (`GET /api/auth/me`) und die Umfragen (`GET /api/surveys`). Das Frontend übernimmt diese Werte als initialen Zustand; Aktionen aktualisieren den Zustand anschließend clientseitig, ohne die Seite neu zu laden.
+- Das gemeinsame Layout lädt beim SSR parallel den aktuellen Nutzer (`GET /api/auth/me`) und alle Umfragen (`GET /api/surveys`). Die Daten stehen dadurch in Navigation und Seiten zur Verfügung. Die Startseite zeigt angemeldeten Nutzern eigene Umfragen und Kennzahlen; nicht angemeldete Nutzer sehen Einstiegslinks. `/surveys` zeigt alle Umfragen. `/create`, `/login` und `/register` sind getrennte Ansichten.
+- Nach erfolgreichem Login oder Registrierung lädt das Frontend die serverseitigen Layout-Daten erneut und navigiert zum Dashboard. Weitere Aktionen aktualisieren lokale Zustände oder laden Daten erneut, je nach Ansicht.
 - Die Umfrageliste ist nach Erstellungszeit absteigend sortiert. Die API liefert zu jeder Umfrage den Autor-Namen und ein `files`-Array der verknüpften Dateien; Umfragen ohne verknüpften Nutzer erhalten den Namen „System-Beispieldaten".
 - Stimmen werden als Zähler direkt an der Umfrage gespeichert. Die Prozentanzeige wird aus `votes_a` und `votes_b` berechnet und gerundet. Bei null Stimmen zeigt das Frontend für beide Optionen 50 % an.
 - Registrierung und Login setzen ein signiertes JWT im Cookie `token`. Das Cookie ist `HttpOnly`, hat `SameSite=Lax` und eine Laufzeit von 24 Stunden. Im aktuellen Code ist `secure: false`.
 - Für Browser-Aufrufe zur API verwendet das Frontend `credentials: 'include'` bei Authentifizierung sowie geschützten Schreibaktionen und Abstimmungen. CORS erlaubt die konfigurierte `FRONTEND_URL` mit Credentials.
+- Das UI verwendet derzeit den Produktnamen „Umfrageheld“; „PulsePoll“ ist der technische Projektname in dieser Übersicht. Laut `Erweiterungen_Doku` wurde die Startseite bereits aufgeräumt; weiterer UI-Polish ist dort als noch geplant vermerkt.
 
 ### Mehrfachabstimmungsschutz
 
@@ -74,6 +90,7 @@ Beim ersten Abstimmungs-Request eines Browsers setzt die API ein `HttpOnly`-Cook
 - Saubere Dateien werden nach `uploads/clean/` verschoben und in `survey_files` registriert.
 - Download/Inline-Preview: `GET /api/files/:id` ist öffentlich und liefert die Datei mit `Content-Disposition: inline` und korrektem MIME-Type. `path.basename` verhindert Path-Traversal-Angriffe.
 - Beim Löschen einer Umfrage (`DELETE /api/surveys/:id`) werden zuerst die `stored_name`-Werte aus `survey_files` gelesen, die Umfrage inklusive zugehöriger Einträge per `ON DELETE CASCADE` aus der DB entfernt und anschließend die physischen Dateien aus `uploads/clean/` gelöscht. Nicht vorhandene oder nicht löschbare Dateien werden nur geloggt.
+- Beim Anlegen einer Umfrage ist ein Datei-Anhang optional. Scheitert der Upload danach, ist die Umfrage bereits angelegt; die Erstellungsansicht vermeidet bei erneutem Absenden eine zweite Umfrage und ermöglicht, den fehlgeschlagenen Upload erneut zu versuchen.
 
 ### URLs und Ports im Compose-Setup
 
@@ -167,6 +184,8 @@ Die API veröffentlicht `USER_REGISTERED`, `USER_LOGIN`, `SURVEY_CREATED`, `SURV
 - Die SSR-Load-Funktion liefert bei nicht erfolgreicher API-Antwort leere bzw. anonyme Daten und bei einem Netzwerkfehler ebenfalls `{ user: null, surveys: [] }`; der Fehler wird im Frontend-Server geloggt.
 - RabbitMQ ist für Ereignisse vorgesehen, nicht für die Funktion der Umfrageansichten oder Abstimmungen. API- und Logger-Quellcode implementieren einen erneuten Verbindungsversuch beim Verbindungsaufbau, aber keine vollständige Wiederherstellungs-/Zustellgarantie nach jedem späteren Verbindungsabbruch. Das gilt analog für ClamAV (Retry alle 15 s bei Verbindungsverlust).
 - Ist ClamAV beim Upload nicht erreichbar, schlägt der Upload mit `503` fehl; die temporäre Datei wird sofort gelöscht.
+- `Erweiterungen_Doku` meldet einen Smoke-Test mit Registrierung/Login, Umfrageverwaltung, Abstimmen, Upload, Persistenz, RabbitMQ/Logger und Docker-Services. Dort ist auch festgehalten, dass der Upload-Scan mit der EICAR-Testdatei nicht vollständig end-to-end verifiziert werden konnte; der ClamAV-Scan selbst wurde separat getestet. Das ist dokumentierter Teststatus, keine Garantie für jeden späteren Code-Stand.
+- Laut `Erweiterungen_Doku` wurde die Oberfläche bereits überarbeitet; weiterer kleiner UI-Polish ist als geplant notiert und noch keine zugesicherte Funktion.
 - Die Compose-Konfiguration enthält Entwicklungszugangsdaten; das JWT-Cookie und das `voter_id`-Cookie werden aktuell mit `secure: false` gesetzt. Vor einem öffentlichen Produktiveinsatz müssen Geheimnisse, HTTPS-/Cookie-Konfiguration und CORS-Origin angepasst und die Zugriffskontrolle fachlich geklärt werden.
 - Die Package-Skripte definieren kein Testskript. Das Frontend hat ein Build-Skript (`npm run build`); API und Logger stellen jeweils `npm start` bereit.
 
@@ -201,13 +220,14 @@ docker compose down
 
 ## Hinweise für Änderungen
 
-- Die Hauptoberfläche und ihre Interaktionen befinden sich in `frontend/src/routes/+page.svelte`; das serverseitige initiale Laden in `frontend/src/routes/+page.server.js`.
-- Das Frontend verwendet SvelteKit mit Svelte 5, den Node-Adapter und Tailwind CSS. `+page.svelte` nutzt Svelte-Runes wie `$state` und `$props`; Layout und globale Tailwind-Direktiven liegen in `+layout.svelte` und `src/app.css`.
+- Server-seitiges Laden des Nutzers und der Umfragen befindet sich in `frontend/src/routes/+layout.server.js`; Navigation und App-Rahmen in `frontend/src/routes/+layout.svelte`.
+- Das Frontend verwendet SvelteKit mit Svelte 5, den Node-Adapter und Tailwind CSS. Seiten und gemeinsame Komponenten nutzen Svelte-Runes wie `$state`, `$derived` und `$props`; Styles liegen in `src/app.css`.
+- Die Dashboard-Ansicht liegt in `frontend/src/routes/+page.svelte`; alle Umfragen und wiederverwendbare Karten-/Abstimmungs-/Upload-Interaktionen in `frontend/src/routes/surveys/+page.svelte` und `frontend/src/lib/SurveyList.svelte`. Erstellen, Login und Registrierung haben eigene Routen.
 - API-Routen, Authentifizierung, Datenbankzugriffe, ClamAV-Scan, Datei-Upload/-Download und RabbitMQ-Publishing befinden sich gemeinsam in `backend-api/index.js`.
 - Änderungen am Schema oder an Startdaten gehören in `db/init.sql`. Beachte, dass das Init-Skript bei bestehenden Datenbank-Volumes nicht automatisch erneut ausgeführt wird.
 - Für eine neue Funktion sind typischerweise Frontend, API, gegebenenfalls Datenbankschema und Audit-Events gemeinsam zu berücksichtigen.
 - Die API verlangt für Anlegen, Bearbeiten, Löschen und Datei-Upload eine Anmeldung, aber prüft keine Eigentümerschaft. Vor einer Änderung der Berechtigungen ist zu klären, ob Umfragen nur von ihren Erstellern verwaltet werden dürfen.
-- Die Datei `documentation` enthält zusätzliche Projektnotizen. Bei Widersprüchen haben der aktuelle Quellcode, `docker-compose.yml` und `db/init.sql` Vorrang vor Beschreibungen.
+- `documentation` und `Erweiterungen_Doku` enthalten zusätzliche Projektnotizen. Bei Widersprüchen haben der aktuelle Quellcode, `docker-compose.yml` und `db/init.sql` Vorrang vor Beschreibungen; Test- und Statusaussagen in den Notizen sind als dokumentierter Stand zu verstehen.
 - Die Package-Skripte definieren kein Testskript. Das Frontend hat ein Build-Skript (`npm run build`); API und Logger stellen jeweils `npm start` bereit.
 
 ## Kopierbarer KI-Prompt
@@ -218,20 +238,25 @@ docker compose down
 >
 > **Wichtige Dateien:**  
 > - `docker-compose.yml`: Services, Netzwerke, Ports, Volumes (`pgdata`, `uploads`), Umgebungsvariablen, Healthchecks und Abhängigkeiten.  
-> - `frontend/src/routes/+page.svelte`: Oberfläche, Svelte-State und Browser-Aktionen; Stimmen, Prozentwerte, Datei-Upload und Datei-Liste werden dort angezeigt.
-> - `frontend/src/routes/+page.server.js`: SSR lädt `/api/auth/me` und `/api/surveys` parallel und leitet das Browser-Cookie zur Authentifizierungsabfrage weiter.
-> - `frontend/src/routes/+layout.svelte`, `frontend/src/app.css`, `frontend/tailwind.config.js`: gemeinsames Layout und Styles.
+> - `frontend/src/routes/+layout.server.js`: SSR lädt `/api/auth/me` und `/api/surveys` parallel und leitet das Browser-Cookie zur Authentifizierungsabfrage weiter.
+> - `frontend/src/routes/+layout.svelte`: App-Rahmen, Navigation und responsive Sidebar.
+> - `frontend/src/routes/+page.svelte`: Dashboard mit persönlichen Umfragen und Kennzahlen.
+> - `frontend/src/routes/surveys/+page.svelte`: Ansicht aller Umfragen.
+> - `frontend/src/routes/create/+page.svelte`, `login/+page.svelte`, `register/+page.svelte`: Erstellen, Login und Registrierung.
+> - `frontend/src/lib/SurveyList.svelte`: wiederverwendbare Umfragekarten, Stimmen, Datei-Upload und Datei-Liste; `Alert.svelte` zeigt Meldungen; `api.js` zentralisiert die Browser-API-URL.
+> - `frontend/src/app.css`, `frontend/tailwind.config.js`: globale Tailwind-Styles und Konfiguration.
 > - `backend-api/index.js`: Express-Endpunkte, Authentifizierung, PostgreSQL-Zugriffe, ClamAV-Scan, Datei-Upload/-Download und RabbitMQ-Publishing.
 > - `backend-logger/index.js`: Verbraucher der RabbitMQ-Queue `survey_events`; schreibt Ereignisse in die Container-Konsole.
 > - `db/init.sql`: Tabellen `users`, `surveys`, `survey_files` und `survey_votes` sowie zwei Seed-Umfragen.
+> - `Erweiterungen_Doku` und `documentation`: zusätzliche Änderungs- und Projektnotizen; als Hinweise lesen und bei Konflikten Quellcode/Compose/SQL priorisieren.
 > - `frontend/svelte.config.js`, `frontend/vite.config.js`, `package.json` und Dockerfiles: Framework-/Build-Konfiguration, Abhängigkeiten und Containerstart.
 >
 > **Daten und API:** `users` enthält eindeutige Benutzernamen und Passwort-Hashes. `surveys` enthält Titel, Optionen A/B, zwei Zähler, optional `user_id` und Erstellungszeit. `survey_files` speichert Metadaten zu hochgeladenen Dateien (UUID-Dateiname, Original-Name, MIME-Type). `survey_votes` speichert je einen Datensatz pro Abstimmung mit `UNIQUE(survey_id, voter_token)` zur Duplikatverhinderung. Relevante Routen sind `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `GET /api/surveys`, `POST /api/surveys`, `PUT /api/surveys/:id`, `POST /api/surveys/:id/vote`, `DELETE /api/surveys/:id`, `POST /api/surveys/:id/upload`, `GET /api/files/:id` und `GET /health`. Erstellen/Bearbeiten erwarten `title`, `option_a`, `option_b`; Abstimmen erwartet `option: "a"` oder `"b"`; Upload erwartet `multipart/form-data` mit Feld `file`.
 >
 > **Authentifizierung und Ereignisse:** Passwörter werden mit `bcryptjs` gehasht; ein JWT wird als `HttpOnly`-Cookie `token` mit 24 Stunden Laufzeit gesetzt. Die API verlangt Anmeldung für Erstellen, Bearbeiten, Löschen und Datei-Upload, aber aktuell keine Eigentümerschaft der Umfrage. Abstimmungen sind öffentlich, aber auf eine Stimme pro Browserprofil begrenzt: ein `voter_id`-Cookie (HttpOnly, 1 Jahr) dient als Voter-Token; `UNIQUE(survey_id, voter_token)` verhindert Duplikate; bei Duplikat antwortet die API mit `409`. `SURVEY_VOTED` wird erst nach erfolgreichem DB-Commit veröffentlicht. Die API sendet `USER_REGISTERED`, `USER_LOGIN`, `SURVEY_CREATED`, `SURVEY_UPDATED`, `SURVEY_VOTED`, `SURVEY_DELETED`, `FILE_UPLOADED` und `FILE_BLOCKED` als JSON-Events an RabbitMQ; der Logger gibt sie aus. Bei fehlendem API-Channel werden Events nicht lokal zwischengespeichert, und sie werden nicht in PostgreSQL persistiert.
 >
-> **Datei-Upload:** Erlaubte Typen: PDF, JPG, PNG; max. 10 MB. Dateien werden zunächst nach `uploads/tmp/` gespeichert, dann per INSTREAM-TCP von ClamAV gescannt. Saubere Dateien kommen nach `uploads/clean/`; infizierte werden gelöscht (422). Ist ClamAV nicht verfügbar, schlägt der Upload mit 503 fehl. Download/Preview über `GET /api/files/:id` ist öffentlich. Beim Löschen einer Umfrage werden die physischen Dateien ebenfalls entfernt.
+> **Datei-Upload:** Erlaubte Typen: PDF, JPG, PNG; max. 10 MB. Dateien werden zunächst nach `uploads/tmp/` gespeichert, dann per INSTREAM-TCP von ClamAV gescannt. Saubere Dateien kommen nach `uploads/clean/`; infizierte werden gelöscht (422). Ist ClamAV nicht verfügbar, schlägt der Upload mit 503 fehl. ClamAV hat in Compose eine Healthcheck-Startfrist von 180 Sekunden, ist aber keine Startabhängigkeit der API; frühe Uploads können deshalb 503 erhalten. Download/Preview über `GET /api/files/:id` ist öffentlich. Beim Löschen einer Umfrage werden die physischen Dateien ebenfalls entfernt. Bei einem fehlgeschlagenen optionalen Upload bleibt die bereits erstellte Umfrage bestehen; erneutes Absenden der Erstellungsansicht soll keine zweite Umfrage anlegen.
 >
-> **Adressen und Betrieb:** Im Compose-Betrieb ist das Frontend unter `http://localhost:5173`, die API unter `http://localhost:3000`, das RabbitMQ-Dashboard unter `http://localhost:15672` erreichbar. Der SSR-Server verwendet `INTERNAL_API_URL=http://backend-api:3000`; der Browser verwendet `PUBLIC_API_URL=http://localhost:3000`. Container sprechen sich über Compose-Service-Namen an, nicht über `localhost`. `docker compose up --build` startet die Anwendung. `db/init.sql` läuft nur bei erstmaliger Initialisierung des Datenbank-Volumes.
+> **Adressen und Betrieb:** Im Compose-Betrieb ist das Frontend unter `http://localhost:5173`, die API unter `http://localhost:3000`, das RabbitMQ-Dashboard unter `http://localhost:15672` erreichbar. Der SSR-Server verwendet `INTERNAL_API_URL=http://backend-api:3000`; der Browser verwendet `PUBLIC_API_URL=http://localhost:3000`. Container sprechen sich über Compose-Service-Namen an, nicht über `localhost`. `docker compose up --build` startet die Anwendung. `RumfrageTool/db/init.sql` läuft nur bei erstmaliger Initialisierung des Datenbank-Volumes.
 >
-> **Grenzen und Arbeitsweise:** Der Prozentwert ist bei null Stimmen jeweils 50 %. Nutzer können derzeit alle Umfragen bearbeiten/löschen und zu allen Umfragen Dateien hochladen, nicht nur für eigene; diese Berechtigungsregel nicht stillschweigend ändern. Die Compose-Datei enthält Entwicklungsgeheimnisse und Auth- sowie Voter-Cookies haben aktuell `secure: false`; keine Produktionssicherheit unterstellen. Für eine Funktion zuerst den Datenfluss Frontend → API → Datenbank und gegebenenfalls RabbitMQ beschreiben, alle betroffenen Schichten prüfen und auf konkrete Dateien/Endpunkte verweisen. Wenn du Code änderst, nenne passende Prüfungen und offene Einschränkungen. Stelle Rückfragen bei fachlichen Entscheidungen, die nicht aus dem Code hervorgehen. Es gibt in den Package-Skripten kein Testskript. `docker compose ps` zeigt den Status, `docker compose logs -f` die Logs und `docker compose down` hält die Services an.
+> **Grenzen, Prüfstatus und Arbeitsweise:** Der Prozentwert ist bei null Stimmen jeweils 50 %. Nutzer können derzeit alle Umfragen bearbeiten/löschen und zu allen Umfragen Dateien hochladen, nicht nur für eigene; diese Berechtigungsregel nicht stillschweigend ändern. `Erweiterungen_Doku` meldet einen Smoke-Test der Hauptfunktionen, aber auch, dass der Upload-Scan mit EICAR nicht vollständig end-to-end geprüft werden konnte; den dokumentierten Status nicht als Garantie für jeden späteren Code-Stand ansehen. Die Compose-Datei enthält Entwicklungsgeheimnisse und Auth- sowie Voter-Cookies haben aktuell `secure: false`; keine Produktionssicherheit unterstellen. Für eine Funktion zuerst den Datenfluss Frontend → API → Datenbank und gegebenenfalls RabbitMQ beschreiben, alle betroffenen Schichten prüfen und auf konkrete Dateien/Endpunkte verweisen. Wenn du Code änderst, nenne passende Prüfungen und offene Einschränkungen. Stelle Rückfragen bei fachlichen Entscheidungen, die nicht aus dem Code hervorgehen. Es gibt in den Package-Skripten kein Testskript. `docker compose ps` zeigt den Status, `docker compose logs -f` die Logs und `docker compose down` hält die Services an.
