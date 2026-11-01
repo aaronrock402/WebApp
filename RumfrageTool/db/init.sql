@@ -18,7 +18,17 @@ CREATE TABLE IF NOT EXISTS surveys (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Start-Daten (Seed Data), damit die App beim ersten Start direkt gefüllt aussieht
+-- 3. Tabelle für hochgeladene Dateien zu Umfragen
+CREATE TABLE IF NOT EXISTS survey_files (
+    id SERIAL PRIMARY KEY,
+    survey_id INTEGER REFERENCES surveys(id) ON DELETE CASCADE,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name VARCHAR(255) NOT NULL UNIQUE,
+    mime_type VARCHAR(50) NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 4. Start-Daten (Seed Data), damit die App beim ersten Start direkt gefüllt aussieht
 INSERT INTO surveys (title, option_a, option_b, votes_a, votes_b)
 VALUES 
     ('Was grillen wir beim Semester-Abschluss am Freitag?', 'Klassische Bratwurst', 'Grillkäse & Gemüse', 14, 19),

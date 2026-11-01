@@ -230,6 +230,49 @@
     }
   }
 
+  // --- 6. Datei-Upload für eine Umfrage ---
+  async function handleUpload(surveyId, form) {
+    clearMessages();
+    const fileInput = form.querySelector('input[type=file]');
+    const file = fileInput?.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${API_URL}/api/surveys/${surveyId}/upload`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+        // Kein Content-Type Header – Browser setzt ihn inkl. Boundary automatisch
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        errorMessage = result.error || 'Upload fehlgeschlagen.';
+        return;
+      }
+
+      // Neue Datei reaktiv in die Umfrage eintragen
+      surveys = surveys.map((s) =>
+        s.id === surveyId
+          ? {
+              ...s,
+              files: [
+                { id: result.id, original_name: result.original_name, mime_type: result.mime_type, uploaded_at: result.uploaded_at },
+                ...(s.files || [])
+              ]
+            }
+          : s
+      );
+      fileInput.value = '';
+      statusMessage = 'Datei erfolgreich hochgeladen und auf Viren geprüft!';
+    } catch (err) {
+      errorMessage = 'Netzwerkfehler beim Hochladen.';
+    }
+  }
+
   // Hilfsfunktion zur Prozentberechnung für die Balkenanzeige
   function getPercent(votes, total) {
     if (total === 0) return 50;
@@ -622,6 +665,61 @@
                 <div style="width: {percentA}%" class="bg-indigo-600 transition-all duration-300"></div>
                 <div style="width: {percentB}%" class="bg-teal-600 transition-all duration-300"></div>
               </div>
+
+              <!-- Angehängte Dateien anzeigen -->
+              {#if survey.files && survey.files.length > 0}
+                <div class="mt-5 pt-4 border-t border-slate-100">
+                  <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
+                    Angehängte Dateien ({survey.files.length})
+                  </h4>
+                  <ul class="space-y-2">
+                    {#each survey.files as file (file.id)}
+                      <li class="flex items-center gap-3">
+                        {#if file.mime_type === 'image/jpeg' || file.mime_type === 'image/png'}
+                          <img
+                            src="{API_URL}/api/files/{file.id}"
+                            alt={file.original_name}
+                            class="h-14 w-14 object-cover rounded-md border border-slate-200 shrink-0"
+                          />
+                        {:else}
+                          <span class="text-2xl shrink-0" aria-hidden="true">📄</span>
+                        {/if}
+                        <a
+                          href="{API_URL}/api/files/{file.id}"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-sm text-indigo-700 hover:text-indigo-900 hover:underline underline-offset-2 truncate"
+                        >
+                          {file.original_name}
+                        </a>
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+
+              <!-- Datei-Upload (nur für eingeloggte Nutzer) -->
+              {#if user}
+                <form
+                  onsubmit={(e) => { e.preventDefault(); handleUpload(survey.id, e.currentTarget); }}
+                  class="mt-4 flex flex-wrap items-center gap-2"
+                >
+                  <input
+                    type="file"
+                    name="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    required
+                    aria-label="Datei für diese Umfrage hochladen (PDF, JPG, PNG)"
+                    class="text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
+                  />
+                  <button
+                    type="submit"
+                    class="px-3 py-1.5 rounded-md bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-sm transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-700 shrink-0"
+                  >
+                    Hochladen
+                  </button>
+                </form>
+              {/if}
             {/if}
           </article>
         {/each}

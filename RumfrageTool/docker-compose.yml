@@ -31,7 +31,19 @@ services:
       timeout: 5s
       retries: 5
 
-  # 3. Backend 1: Main API (Express)
+  # 3. ClamAV Virenscanner (eigener Service)
+  clamav:
+    image: clamav/clamav-debian:stable
+    container_name: survey-clamav
+    healthcheck:
+      # clamd-check.sh ist im offiziellen Image enthalten
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 180s
+
+  # 4. Backend 1: Main API (Express)
   backend-api:
     build: ./backend-api
     container_name: survey-api
@@ -43,6 +55,10 @@ services:
       RABBITMQ_URL: amqp://rabbitmq:5672
       JWT_SECRET: ${JWT_SECRET:-geheimes-uni-projekt-jwt-secret-2026}
       FRONTEND_URL: http://localhost:5173
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -54,7 +70,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 4. Backend 2: Logging Microservice (Node.js)
+  # 5. Backend 2: Logging Microservice (Node.js)
   backend-logger:
     build: ./backend-logger
     container_name: survey-logger
@@ -72,7 +88,7 @@ services:
       retries: 5
       start_period: 15s
 
-  # 5. Frontend: SvelteKit (SSR)
+  # 6. Frontend: SvelteKit (SSR)
   frontend:
     build: ./frontend
     container_name: survey-frontend
@@ -95,3 +111,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:
