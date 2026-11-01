@@ -409,12 +409,32 @@ app.delete('/api/surveys/:id', requireAuth, async (req, res) => {
   const surveyId = Number(req.params.id);
 
   try {
+    // Dateinamen vor dem DB-Löschen abfragen, da CASCADE die Einträge sonst entfernt
+    const filesResult = await pool.query(
+      'SELECT stored_name FROM survey_files WHERE survey_id = $1',
+      [surveyId]
+    );
+
     const result = await pool.query('DELETE FROM surveys WHERE id = $1 RETURNING id, title', [
       surveyId
     ]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Umfrage nicht gefunden.' });
+    }
+
+    // Physische Dateien erst nach erfolgreichem DB-Löschen entfernen;
+    // fehlende oder nicht löschbare Dateien werden nur geloggt
+    for (const row of filesResult.rows) {
+      const storedName = path.basename(row.stored_name);
+      const filePath = path.join(CLEAN_DIR, storedName);
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (fileErr) {
+        console.error(`[API] Datei konnte nicht gelöscht werden: ${filePath}:`, fileErr.message);
+      }
     }
 
     const deleted = result.rows[0];
